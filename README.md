@@ -2,6 +2,23 @@
 
 A Model Context Protocol (MCP) server providing read-only access to Google Workspace services.
 
+## How is this different?
+
+Most Google Workspace MCPs require you to:
+1. Create a Google Cloud Platform project
+2. Enable APIs manually
+3. Configure OAuth consent screens
+4. Create OAuth credentials and download a `credentials.json` file
+5. Manage token refresh and storage
+
+**This MCP uses Application Default Credentials (ADC)** - the same auth method used by `gcloud`, Terraform, and other Google tools. Setup is one command:
+
+```bash
+gcloud auth application-default login
+```
+
+No GCP project access needed. No credentials files to manage. Works with your existing Google Workspace account - ideal for enterprise users whose organizations manage Google Workspace centrally.
+
 ## Features
 
 - **Google Drive**: Search files, list folders, read document content
