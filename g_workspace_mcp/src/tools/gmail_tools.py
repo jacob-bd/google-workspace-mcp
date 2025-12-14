@@ -83,6 +83,7 @@ def gmail_search(
                     "from": headers.get("From", "Unknown"),
                     "date": headers.get("Date", ""),
                     "snippet": msg_detail.get("snippet", ""),
+                    "webLink": f"https://mail.google.com/mail/u/0/#inbox/{msg['id']}",
                 }
             )
 

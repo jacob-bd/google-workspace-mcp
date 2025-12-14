@@ -12,6 +12,7 @@ import json
 from typing import Any, Dict, Literal, Optional
 
 from googleapiclient.http import MediaIoBaseDownload
+from googleapiclient.errors import HttpError
 
 from g_workspace_mcp.src.auth.google_oauth import get_auth
 from g_workspace_mcp.utils.pylogger import get_python_logger
@@ -58,16 +59,34 @@ def drive_search(
                 search_query = f"{query} and mimeType='{mime_type_map[file_type.lower()]}'"
 
         # Execute search
-        results = (
-            service.files()
-            .list(
-                q=search_query,
-                pageSize=min(max_results, 100),
-                fields="files(id, name, mimeType, webViewLink, modifiedTime, size)",
-                orderBy="modifiedTime desc",
+        try:
+            results = (
+                service.files()
+                .list(
+                    q=search_query,
+                    pageSize=min(max_results, 100),
+                    fields="files(id, name, mimeType, webViewLink, modifiedTime, size)",
+                    orderBy="modifiedTime desc",
+                )
+                .execute()
             )
-            .execute()
-        )
+        except HttpError as e:
+            if e.resp.status in [401, 403]:
+                logger.info("Auth/Quota error, clearing cache and retrying...")
+                get_auth().clear_cache()
+                service = get_auth().get_service("drive", "v3")
+                results = (
+                    service.files()
+                    .list(
+                        q=search_query,
+                        pageSize=min(max_results, 100),
+                        fields="files(id, name, mimeType, webViewLink, modifiedTime, size)",
+                        orderBy="modifiedTime desc",
+                    )
+                    .execute()
+                )
+            else:
+                raise e
 
         files = results.get("files", [])
         logger.info(f"Drive search found {len(files)} files for query: {query}")

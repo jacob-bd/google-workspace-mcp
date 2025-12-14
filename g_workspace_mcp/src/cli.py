@@ -145,14 +145,34 @@ def run():
 
 
 @main.command()
-@click.option("--format", "-f", "output_format", type=click.Choice(["claude", "cursor", "gemini", "json"]), default="claude")
-@click.option("--scope", "-s", type=click.Choice(["user", "project"]), default="user", help="Gemini CLI scope (user=system-wide, project=current directory)")
+@click.option("--format", "-f", "output_format", type=click.Choice(["claude", "cursor", "gemini", "json"]), default=None, help="Target AI tool: claude, cursor, gemini, or json")
+@click.option("--scope", "-s", type=click.Choice(["user", "project"]), default="user", help="Scope: user (system-wide) or project (current directory)")
 def config(output_format: str, scope: str):
     """
-    Print MCP configuration for AI tools.
+    Configure MCP for AI tools.
 
-    Use this to configure Claude Code, Cursor, Gemini CLI, or other MCP clients.
+    Requires --format/-f to specify the target tool.
     """
+    # Show help if no format specified
+    if output_format is None:
+        console.print(Panel.fit(
+            "[bold blue]MCP Configuration[/bold blue]",
+            border_style="blue"
+        ))
+        console.print("\n[yellow]Usage:[/yellow] g-workspace-mcp config -f <format>\n")
+        console.print("[yellow]Available formats:[/yellow]")
+        console.print("  [bold]claude[/bold]   - Configure Claude Code (runs 'claude mcp add' automatically)")
+        console.print("  [bold]gemini[/bold]   - Configure Gemini CLI (runs 'gemini mcp add' automatically)")
+        console.print("  [bold]cursor[/bold]   - Show JSON config for Cursor (manual copy)")
+        console.print("  [bold]json[/bold]     - Raw JSON output for other tools")
+        console.print("\n[yellow]Options:[/yellow]")
+        console.print("  [bold]-s, --scope[/bold]  user (system-wide) or project (current directory)")
+        console.print("\n[yellow]Examples:[/yellow]")
+        console.print("  g-workspace-mcp config -f claude")
+        console.print("  g-workspace-mcp config -f gemini -s project")
+        console.print("  g-workspace-mcp config -f cursor")
+        return
+
     # Find the installed command path
     cmd_path = shutil.which("g-workspace-mcp")
     if not cmd_path:

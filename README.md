@@ -45,11 +45,12 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 ### 2. Install the MCP Server
 
 ```bash
-cd /path/to/g-workspace-mcp
-uv pip install .
+git clone https://github.com/jbendavi/google-workspace-mcp.git
+cd google-workspace-mcp
+uv tool install .
 ```
 
-After installation, you can delete the folder - the MCP will continue to work.
+This installs the CLI globally in an isolated environment. After installation, you can delete the `google-workspace-mcp` folder.
 
 ### 3. Install Google Cloud CLI (if not already installed)
 
@@ -83,19 +84,18 @@ This will:
 
 ### 5. Configure Your AI Tool
 
-**For Claude Code (default):**
 ```bash
+# See available options
 g-workspace-mcp config
-```
 
-**For Gemini CLI:**
-```bash
-g-workspace-mcp config --format gemini
-```
+# Configure Claude Code
+g-workspace-mcp config -f claude
 
-**For Cursor or other tools:**
-```bash
-g-workspace-mcp config --format json
+# Configure Gemini CLI
+g-workspace-mcp config -f gemini
+
+# Get JSON for Cursor or other tools
+g-workspace-mcp config -f cursor
 ```
 
 The command will show what it's about to do and ask for confirmation.
@@ -134,8 +134,8 @@ gcloud auth application-default login
 # Set up authentication (opens browser)
 g-workspace-mcp setup
 
-# Generate MCP configuration for Claude Code/Cursor/Gemini CLI
-g-workspace-mcp config [--format claude|cursor|gemini|json] [--scope user|project]
+# Configure MCP for AI tools (shows help if no format specified)
+g-workspace-mcp config -f <claude|cursor|gemini|json> [-s user|project]
 
 # Check authentication status
 g-workspace-mcp status
@@ -183,10 +183,10 @@ g-workspace-mcp run
 
 ```bash
 # Add system-wide (default)
-g-workspace-mcp config --format claude
+g-workspace-mcp config -f claude
 
 # Or add project-level
-g-workspace-mcp config --format claude --scope project
+g-workspace-mcp config -f claude -s project
 ```
 
 This will show you the command and ask for confirmation before running it.
@@ -230,10 +230,10 @@ Add to Cursor MCP settings:
 
 ```bash
 # Add system-wide (default)
-g-workspace-mcp config --format gemini
+g-workspace-mcp config -f gemini
 
 # Or add project-level
-g-workspace-mcp config --format gemini --scope project
+g-workspace-mcp config -f gemini -s project
 ```
 
 This will show you the command and ask for confirmation before running it.

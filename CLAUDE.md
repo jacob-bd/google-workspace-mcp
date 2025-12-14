@@ -9,8 +9,11 @@ MCP server providing **read-only** access to Google Workspace (Drive, Gmail, Cal
 ## Development Commands
 
 ```bash
-# Install for development (editable)
-uv pip install -e ".[dev]"
+# Install globally (isolated environment)
+uv tool install .
+
+# Install for development (editable, requires venv)
+uv venv && source .venv/bin/activate && uv pip install -e ".[dev]"
 
 # Run linting
 ruff check .
@@ -32,8 +35,8 @@ pytest tests/test_file.py::test_name -v
 g-workspace-mcp --help
 g-workspace-mcp status
 
-# Reinstall after changes (for non-editable install)
-uv pip uninstall g-workspace-mcp && uv pip install .
+# Reinstall after changes
+uv tool install --force .
 ```
 
 ## Architecture
