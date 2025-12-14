@@ -40,17 +40,56 @@ def _check_adc_configured() -> bool:
         return False
 
 
-def _run_gcloud_auth() -> bool:
-    """Run gcloud auth application-default login."""
+def _test_workspace_api_access() -> tuple[bool, str]:
+    """
+    Test if current ADC has proper scopes for Workspace APIs.
+
+    Returns:
+        Tuple of (success, error_type) where error_type is:
+        - "" if success
+        - "no_adc" if no credentials
+        - "insufficient_scopes" if scopes are missing
+        - "api_not_enabled" if quota project issue
+        - "other" for other errors
+    """
     try:
-        # Include the scopes needed for Workspace APIs
-        scopes = [
-            "https://www.googleapis.com/auth/drive.readonly",
-            "https://www.googleapis.com/auth/gmail.readonly",
-            "https://www.googleapis.com/auth/calendar.readonly",
-            "https://www.googleapis.com/auth/spreadsheets.readonly",
-        ]
-        scope_arg = ",".join(scopes)
+        from g_workspace_mcp.src.auth.google_oauth import get_auth
+
+        # Clear any cached credentials to get fresh state
+        get_auth().clear_cache()
+
+        # Try to list 1 file from Drive as a test
+        service = get_auth().get_service("drive", "v3")
+        service.files().list(pageSize=1, fields="files(id)").execute()
+        return (True, "")
+    except Exception as e:
+        error_str = str(e).lower()
+        if "insufficient authentication scopes" in error_str:
+            return (False, "insufficient_scopes")
+        elif "api has not been used" in error_str or "api is disabled" in error_str:
+            return (False, "api_not_enabled")
+        elif "default credentials" in error_str or "could not automatically determine" in error_str:
+            return (False, "no_adc")
+        else:
+            return (False, "other")
+
+
+# All scopes needed - includes cloud-platform to not break other GCP tools
+REQUIRED_SCOPES = [
+    "https://www.googleapis.com/auth/drive.readonly",
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/calendar.readonly",
+    "https://www.googleapis.com/auth/spreadsheets.readonly",
+    "https://www.googleapis.com/auth/cloud-platform",  # For Claude Code/Vertex and other GCP tools
+]
+
+
+def _run_gcloud_auth() -> bool:
+    """Run gcloud auth application-default login with all required scopes."""
+    try:
+        scope_arg = ",".join(REQUIRED_SCOPES)
+
+        console.print("  [dim]Scopes: drive, gmail, calendar, sheets, cloud-platform[/dim]")
 
         result = subprocess.run(
             ["gcloud", "auth", "application-default", "login", f"--scopes={scope_arg}"],
@@ -101,31 +140,69 @@ def setup():
 """)
         sys.exit(1)
 
-    # Step 2: Check if already authenticated
-    console.print(f"\n[yellow]Step 2:[/yellow] Checking authentication status")
+    # Step 2: Test Workspace API access
+    console.print(f"\n[yellow]Step 2:[/yellow] Testing Google Workspace API access")
 
-    if _check_adc_configured():
-        console.print("  [green]✓[/green] Already authenticated!")
+    success, error_type = _test_workspace_api_access()
+
+    if success:
+        console.print("  [green]✓[/green] Workspace APIs accessible!")
         console.print(f"\n[green]Setup complete![/green]")
         console.print(f"\nRun [bold]g-workspace-mcp config[/bold] to get MCP configuration")
         return
 
-    console.print("  [yellow]![/yellow] Not authenticated yet")
+    # Handle different error types
+    if error_type == "no_adc":
+        console.print("  [yellow]![/yellow] No authentication found")
+        console.print("\n  You need to authenticate with Google.")
 
-    # Step 3: Run authentication
-    console.print(f"\n[yellow]Step 3:[/yellow] Running Google authentication")
-    console.print("  Opening browser for authentication...")
+    elif error_type == "insufficient_scopes":
+        console.print("  [yellow]![/yellow] Missing required scopes")
+        console.print("\n  Your current authentication doesn't include Workspace API scopes.")
+        console.print("  Re-authentication is needed to add: drive, gmail, calendar, sheets")
+        console.print("  [dim](cloud-platform scope will also be included to not break other tools)[/dim]")
+
+    elif error_type == "api_not_enabled":
+        console.print("  [red]✗[/red] API not enabled on quota project")
+        console.print("""
+  Your quota project doesn't have Google Workspace APIs enabled.
+
+  [bold]Option 1:[/bold] Change quota project to one with APIs enabled:
+    gcloud auth application-default set-quota-project <PROJECT_WITH_APIS>
+
+  [bold]Option 2:[/bold] Enable APIs on your current quota project (if you have access)
+
+  [dim]For Red Hat users: try 'redhat-ai-analysis' as the quota project[/dim]
+""")
+        sys.exit(1)
+
+    else:
+        console.print(f"  [red]✗[/red] API test failed: {error_type}")
+        console.print("  Try running setup again or check your network connection")
+        sys.exit(1)
+
+    # Step 3: Ask for approval and run authentication
+    console.print(f"\n[yellow]Step 3:[/yellow] Authentication required")
+
+    if not click.confirm("Do you want to authenticate now?", default=True):
+        console.print("\n[yellow]Cancelled.[/yellow]")
+        console.print("Run [bold]g-workspace-mcp setup[/bold] when ready to authenticate")
+        sys.exit(0)
+
+    console.print("\n  Opening browser for authentication...")
     console.print("  [dim](Sign in with your Google account)[/dim]\n")
 
     if _run_gcloud_auth():
         # Verify it worked
-        if _check_adc_configured():
+        success, _ = _test_workspace_api_access()
+        if success:
             console.print("\n  [green]✓[/green] Authentication successful!")
             console.print(f"\n[green]Setup complete![/green]")
             console.print(f"\nRun [bold]g-workspace-mcp config[/bold] to get MCP configuration")
         else:
-            console.print("\n  [red]✗[/red] Authentication completed but verification failed")
-            console.print("  Try running: [bold]gcloud auth application-default login[/bold]")
+            console.print("\n  [yellow]![/yellow] Authentication completed but API test failed")
+            console.print("  This might be a quota project issue. Check:")
+            console.print("    cat ~/.config/gcloud/application_default_credentials.json | grep quota")
             sys.exit(1)
     else:
         console.print("\n  [red]✗[/red] Authentication failed or was cancelled")
