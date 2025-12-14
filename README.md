@@ -319,4 +319,3 @@ uv run python -m g_workspace_mcp.src.main
 ## License
 
 MIT
-
