@@ -44,8 +44,16 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 ### 2. Install the MCP Server
 
+**Clone from GitHub:**
 ```bash
 git clone https://github.com/jacob-bd/google-workspace-mcp.git
+cd google-workspace-mcp
+uv tool install .
+```
+
+**Or clone from GitLab:**
+```bash
+git clone https://gitlab.com/jbendavi/google-workspace-mcp.git
 cd google-workspace-mcp
 uv tool install .
 ```
