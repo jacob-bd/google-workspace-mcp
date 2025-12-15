@@ -46,8 +46,8 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 **Clone from GitHub:**
 ```bash
-git clone https://github.com/jbendavi/g-workspace-mcp.git
-cd g-workspace-mcp
+git clone https://github.com/jacob-bd/google-workspace-mcp.git
+cd google-workspace-mcp
 uv tool install .
 ```
 
