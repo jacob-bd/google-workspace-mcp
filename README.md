@@ -306,6 +306,17 @@ gemini mcp list
 - No credentials files to manage or share
 - Client secrets (if using OAuth) should never be committed to git
 
+## Privacy
+
+This MCP does **not** collect, store, or transmit any user data:
+
+- **No data logging** - Operational logs contain only metadata (counts, IDs), never content
+- **No data storage** - Your emails, files, and calendar events are never written to disk
+- **No telemetry** - Zero analytics, tracking, or usage reporting
+- **Direct data flow** - Data flows directly from Google APIs to your AI tool
+
+The only file stored locally is your OAuth token (`~/.config/g-workspace-mcp/token.json`) for authentication purposes.
+
 ## Troubleshooting
 
 ### "Google authentication not configured"
