@@ -84,9 +84,13 @@ g-workspace-mcp setup
 ```
 
 This will:
-- Check that gcloud CLI is installed
-- Open a browser for Google authentication
-- Store credentials for future use (auto-refreshes)
+1. **Check gcloud CLI** - Verify it's installed
+2. **Check existing credentials** - If you have existing ADC credentials, shows the file location and any configured `quota_project`
+3. **Test API access** - Verifies your credentials have the required scopes and that the quota project (if any) has Workspace APIs enabled
+4. **Re-authenticate if needed** - If scopes are missing:
+   - Creates a timestamped backup of your existing credentials
+   - Opens browser for Google authentication
+   - Reminds you to restore your quota project if one was configured
 
 **That's it!** No GCP project access required - just your Google account.
 
@@ -131,7 +135,12 @@ If you need to re-authenticate:
 g-workspace-mcp setup
 ```
 
-Or manually:
+This will automatically backup your existing credentials before making changes. Backups are saved as:
+```
+~/.config/gcloud/application_default_credentials.json.backup.<timestamp>
+```
+
+Or manually (no backup):
 ```bash
 gcloud auth application-default login
 ```

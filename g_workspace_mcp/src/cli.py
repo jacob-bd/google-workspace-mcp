@@ -11,6 +11,8 @@ import json
 import shutil
 import subprocess
 import sys
+from datetime import datetime
+from pathlib import Path
 
 import click
 from rich.console import Console
@@ -38,6 +40,50 @@ def _check_adc_configured() -> bool:
         return get_auth().is_authenticated()
     except Exception:
         return False
+
+
+def _get_adc_file_path() -> Path:
+    """Get the path to the Application Default Credentials file."""
+    return Path.home() / ".config" / "gcloud" / "application_default_credentials.json"
+
+
+def _read_adc_file() -> dict | None:
+    """
+    Read and parse the ADC file.
+
+    Returns:
+        Dictionary with ADC contents, or None if file doesn't exist or can't be read.
+    """
+    adc_path = _get_adc_file_path()
+    if not adc_path.exists():
+        return None
+
+    try:
+        with open(adc_path) as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def _backup_adc_file() -> Path | None:
+    """
+    Create a timestamped backup of the ADC file.
+
+    Returns:
+        Path to the backup file, or None if no file to backup.
+    """
+    adc_path = _get_adc_file_path()
+    if not adc_path.exists():
+        return None
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_path = adc_path.with_suffix(f".json.backup.{timestamp}")
+
+    try:
+        shutil.copy2(adc_path, backup_path)
+        return backup_path
+    except OSError:
+        return None
 
 
 def _test_workspace_api_access() -> tuple[bool, str]:
@@ -115,7 +161,7 @@ def setup():
     ))
 
     # Step 1: Check gcloud CLI
-    console.print(f"\n[yellow]Step 1:[/yellow] Checking gcloud CLI installation")
+    console.print("\n[yellow]Step 1:[/yellow] Checking gcloud CLI installation")
 
     if _check_gcloud_installed():
         console.print("  [green]✓[/green] gcloud CLI is installed")
@@ -140,15 +186,36 @@ def setup():
 """)
         sys.exit(1)
 
-    # Step 2: Test Workspace API access
-    console.print(f"\n[yellow]Step 2:[/yellow] Testing Google Workspace API access")
+    # Step 2: Check existing credentials
+    console.print("\n[yellow]Step 2:[/yellow] Checking existing credentials")
+
+    adc_path = _get_adc_file_path()
+    existing_adc = _read_adc_file()
+    existing_quota_project = None
+
+    if existing_adc:
+        console.print("  [green]✓[/green] Found existing credentials at:")
+        console.print(f"      [dim]{adc_path}[/dim]")
+
+        existing_quota_project = existing_adc.get("quota_project_id")
+        if existing_quota_project:
+            console.print(f"  [cyan]ℹ[/cyan] Quota project: [bold]{existing_quota_project}[/bold]")
+        else:
+            console.print("  [dim]  No quota_project_id set in credentials[/dim]")
+    else:
+        console.print("  [dim]  No existing credentials found[/dim]")
+
+    # Step 3: Test Workspace API access
+    console.print("\n[yellow]Step 3:[/yellow] Testing Google Workspace API access")
 
     success, error_type = _test_workspace_api_access()
 
     if success:
         console.print("  [green]✓[/green] Workspace APIs accessible!")
-        console.print(f"\n[green]Setup complete![/green]")
-        console.print(f"\nRun [bold]g-workspace-mcp config[/bold] to get MCP configuration")
+        if existing_quota_project:
+            console.print(f"  [green]✓[/green] Quota project [bold]{existing_quota_project}[/bold] has required APIs enabled")
+        console.print("\n[green]Setup complete![/green]")
+        console.print("\nRun [bold]g-workspace-mcp config[/bold] to get MCP configuration")
         return
 
     # Handle different error types
@@ -161,12 +228,14 @@ def setup():
         console.print("\n  Your current authentication doesn't include Workspace API scopes.")
         console.print("  Re-authentication is needed to add: drive, gmail, calendar, sheets")
         console.print("  [dim](cloud-platform scope will also be included to not break other tools)[/dim]")
+        if existing_quota_project:
+            console.print(f"\n  [cyan]ℹ[/cyan] Your quota project [bold]{existing_quota_project}[/bold] will need to be re-set after auth.")
 
     elif error_type == "api_not_enabled":
         console.print("  [red]✗[/red] API not enabled on quota project")
+        if existing_quota_project:
+            console.print(f"\n  Your quota project [bold]{existing_quota_project}[/bold] doesn't have Workspace APIs enabled.")
         console.print("""
-  Your quota project doesn't have Google Workspace APIs enabled.
-
   [bold]Option 1:[/bold] Change quota project to one with APIs enabled:
     gcloud auth application-default set-quota-project <PROJECT_WITH_APIS>
 
@@ -181,10 +250,20 @@ def setup():
         console.print("  Try running setup again or check your network connection")
         sys.exit(1)
 
-    # Step 3: Ask for approval and run authentication
-    console.print(f"\n[yellow]Step 3:[/yellow] Authentication required")
+    # Step 4: Backup and authenticate
+    console.print("\n[yellow]Step 4:[/yellow] Authentication required")
 
-    if not click.confirm("Do you want to authenticate now?", default=True):
+    # Create backup before making changes
+    backup_path = None
+    if existing_adc:
+        backup_path = _backup_adc_file()
+        if backup_path:
+            console.print("\n  [cyan]ℹ[/cyan] Backing up existing credentials to:")
+            console.print(f"      [dim]{backup_path}[/dim]")
+        else:
+            console.print("\n  [yellow]![/yellow] Could not create backup of existing credentials")
+
+    if not click.confirm("\nDo you want to authenticate now?", default=True):
         console.print("\n[yellow]Cancelled.[/yellow]")
         console.print("Run [bold]g-workspace-mcp setup[/bold] when ready to authenticate")
         sys.exit(0)
@@ -197,15 +276,24 @@ def setup():
         success, _ = _test_workspace_api_access()
         if success:
             console.print("\n  [green]✓[/green] Authentication successful!")
-            console.print(f"\n[green]Setup complete![/green]")
-            console.print(f"\nRun [bold]g-workspace-mcp config[/bold] to get MCP configuration")
+            console.print("\n[green]Setup complete![/green]")
+            console.print("\nRun [bold]g-workspace-mcp config[/bold] to get MCP configuration")
         else:
             console.print("\n  [yellow]![/yellow] Authentication completed but API test failed")
-            console.print("  This might be a quota project issue. Check:")
-            console.print("    cat ~/.config/gcloud/application_default_credentials.json | grep quota")
+            console.print("  This might be a quota project issue.")
+            if existing_quota_project:
+                console.print(f"\n  [cyan]ℹ[/cyan] Your previous quota project was: [bold]{existing_quota_project}[/bold]")
+                console.print("  To restore it, run:")
+                console.print(f"    [bold]gcloud auth application-default set-quota-project {existing_quota_project}[/bold]")
+            else:
+                console.print("  Check:")
+                console.print("    cat ~/.config/gcloud/application_default_credentials.json | grep quota")
             sys.exit(1)
     else:
         console.print("\n  [red]✗[/red] Authentication failed or was cancelled")
+        if existing_adc and backup_path:
+            console.print("\n  [cyan]ℹ[/cyan] Your previous credentials were backed up to:")
+            console.print(f"      [dim]{backup_path}[/dim]")
         sys.exit(1)
 
 
@@ -304,7 +392,6 @@ def config(output_format: str, scope: str):
             sys.exit(1)
 
         # Build the command
-        scope_arg = "-s user" if scope == "user" else ""
         scope_desc = "system-wide" if scope == "user" else "project-level"
 
         cmd = ["gemini", "mcp", "add"]
@@ -350,7 +437,7 @@ def status():
     ))
 
     # Check gcloud CLI
-    console.print(f"\n[yellow]gcloud CLI:[/yellow]")
+    console.print("\n[yellow]gcloud CLI:[/yellow]")
     if _check_gcloud_installed():
         gcloud_path = shutil.which("gcloud")
         console.print(f"  [green]✓[/green] Installed at {gcloud_path}")
@@ -359,7 +446,7 @@ def status():
         return
 
     # Check ADC
-    console.print(f"\n[yellow]Authentication:[/yellow]")
+    console.print("\n[yellow]Authentication:[/yellow]")
     if _check_adc_configured():
         console.print("  [green]✓[/green] Application Default Credentials configured")
         console.print("  [green]✓[/green] Ready to use!")
