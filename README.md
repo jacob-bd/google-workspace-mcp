@@ -4,18 +4,18 @@ A Model Context Protocol (MCP) server providing read-only access to Google Works
 
 ## How is this different?
 
-Most Google Workspace MCPs require complex setup. This MCP offers **two simple authentication options**:
+This MCP offers **two authentication options** depending on your setup:
 
-### Option 1: OAuth (Recommended)
-- Just sign in with your Google account
-- No gcloud CLI needed
-- Works with personal Gmail and Google Workspace accounts
-- Tokens stored securely in `~/.config/g-workspace-mcp/`
-
-### Option 2: ADC (Application Default Credentials)
+### Option 1: ADC (Recommended for Enterprise)
 - Uses gcloud CLI (same as Terraform, other Google tools)
 - Ideal for enterprise users with existing gcloud setup
 - Requires a quota project with Workspace APIs enabled
+- **No additional setup** if you already have gcloud configured
+
+### Option 2: OAuth (For Personal Gmail)
+- Works with personal Gmail accounts without gcloud
+- Requires one-time setup: create your own OAuth credentials in Google Cloud Console (~5 minutes)
+- Tokens stored securely in `~/.config/g-workspace-mcp/`
 
 **Both options work with personal Gmail accounts and enterprise Google Workspace accounts.**
 
@@ -32,7 +32,7 @@ All access is **read-only** for safety.
 
 - **Python 3.11+**
 - **uv** - Fast Python package manager ([install](https://docs.astral.sh/uv/getting-started/installation/))
-- **Google Cloud CLI** - For authentication
+- **Google Cloud CLI** - Only required for ADC authentication (not needed for OAuth)
 
 ## Quick Start
 
@@ -79,22 +79,107 @@ sudo apt-get install google-cloud-cli
 
 ### 4. Authenticate
 
+**Choose your authentication method:**
+
+- **ADC (Enterprise)**: If you have gcloud installed, just run `g-workspace-mcp setup --adc`
+- **OAuth (Personal Gmail)**: First create your OAuth credentials (see next section), then run `g-workspace-mcp setup --oauth`
+
+---
+
+## Creating Your OAuth Credentials (For Personal Gmail Users)
+
+If you're using OAuth instead of ADC, you need to create your own OAuth credentials in Google Cloud Console. This is a one-time setup that takes about 5 minutes.
+
+### Step 1: Create a Google Cloud Project
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Click the project dropdown at the top of the page
+3. Click **New Project**
+4. Enter a project name (e.g., "Workspace MCP")
+5. Click **Create**
+6. Wait for the project to be created, then select it from the dropdown
+
+### Step 2: Enable APIs
+
+1. Go to **APIs & Services** > **Library** (or [click here](https://console.cloud.google.com/apis/library))
+2. Search for and enable each of these APIs:
+   - **Google Drive API**
+   - **Gmail API**
+   - **Google Calendar API**
+   - **Google Sheets API**
+
+### Step 3: Configure OAuth Consent Screen
+
+1. Go to **APIs & Services** > **OAuth consent screen**
+2. Select **External** and click **Create**
+3. Fill in the required fields:
+   - **App name**: "Workspace MCP" (or any name you prefer)
+   - **User support email**: Your email address
+   - **Developer contact email**: Your email address
+4. Click **Save and Continue**
+5. On the **Scopes** page, click **Add or Remove Scopes**
+6. Add these scopes (search or paste the URLs):
+   - `https://www.googleapis.com/auth/drive.readonly`
+   - `https://www.googleapis.com/auth/gmail.readonly`
+   - `https://www.googleapis.com/auth/calendar.readonly`
+   - `https://www.googleapis.com/auth/spreadsheets.readonly`
+7. Click **Update**, then **Save and Continue**
+8. On the **Test users** page, click **Add Users**
+9. Add your own email address
+10. Click **Save and Continue**, then **Back to Dashboard**
+
+### Step 4: Create OAuth Client ID
+
+1. Go to **APIs & Services** > **Credentials**
+2. Click **+ Create Credentials** > **OAuth client ID**
+3. Select **Desktop app** as the application type
+4. Enter a name (e.g., "Workspace MCP Desktop")
+5. Click **Create**
+
+### Step 5: Download and Save the Credentials
+
+1. A popup will show your Client ID and Client Secret
+2. Click **Download JSON** (important: do this now, you can't download the secret later!)
+3. Rename the downloaded file to `client_secret.json`
+4. Move it to: `~/.config/g-workspace-mcp/client_secret.json`
+
+**On macOS/Linux:**
 ```bash
-g-workspace-mcp setup
+mkdir -p ~/.config/g-workspace-mcp
+mv ~/Downloads/client_secret_*.json ~/.config/g-workspace-mcp/client_secret.json
+```
+
+### Step 6: Run Setup
+
+```bash
+g-workspace-mcp setup --oauth
+```
+
+This will open your browser to sign in with your Google account. After authorizing, you're all set!
+
+> **Note**: You'll see a warning that the app is "unverified". This is normal for personal OAuth apps. Click **Advanced** > **Go to Workspace MCP (unsafe)** to continue. This is safe because you created the app yourself.
+
+---
+
+### 5. Authenticate (ADC Method - Enterprise Users)
+
+If you have gcloud installed and configured, run:
+
+```bash
+g-workspace-mcp setup --adc
 ```
 
 This will:
 1. **Check gcloud CLI** - Verify it's installed
-2. **Check existing credentials** - If you have existing ADC credentials, shows the file location and any configured `quota_project`
-3. **Test API access** - Verifies your credentials have the required scopes and that the quota project (if any) has Workspace APIs enabled
-4. **Re-authenticate if needed** - If scopes are missing:
-   - Creates a timestamped backup of your existing credentials
-   - Opens browser for Google authentication
-   - Reminds you to restore your quota project if one was configured
+2. **Check existing credentials** - Shows the file location and any configured `quota_project`
+3. **Test API access** - Verifies your credentials have the required scopes
+4. **Re-authenticate if needed** - Creates a backup of existing credentials before re-authenticating
 
-**That's it!** No GCP project access required - just your Google account.
+**That's it!** If you already have gcloud set up with a quota project, you're ready to go.
 
-### 5. Configure Your AI Tool
+---
+
+### 6. Configure Your AI Tool
 
 ```bash
 # See available options
@@ -144,12 +229,12 @@ When re-authenticating with ADC, the setup command automatically backs up your e
 ## CLI Commands
 
 ```bash
-# Set up authentication (interactive - choose OAuth or ADC)
+# Set up authentication (interactive - prompts to choose method)
 g-workspace-mcp setup
 
 # Set up with specific method
-g-workspace-mcp setup --oauth          # OAuth flow (recommended)
-g-workspace-mcp setup --adc            # ADC/gcloud flow
+g-workspace-mcp setup --oauth          # OAuth flow (requires client_secret.json)
+g-workspace-mcp setup --adc            # ADC/gcloud flow (for enterprise users)
 
 # Configure MCP for AI tools (shows help if no format specified)
 g-workspace-mcp config -f <claude|cursor|gemini|json> [-s user|project]
