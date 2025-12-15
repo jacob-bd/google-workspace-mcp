@@ -4,20 +4,20 @@ A Model Context Protocol (MCP) server providing read-only access to Google Works
 
 ## How is this different?
 
-Most Google Workspace MCPs require you to:
-1. Create a Google Cloud Platform project
-2. Enable APIs manually
-3. Configure OAuth consent screens
-4. Create OAuth credentials and download a `credentials.json` file
-5. Manage token refresh and storage
+Most Google Workspace MCPs require complex setup. This MCP offers **two simple authentication options**:
 
-**This MCP uses Application Default Credentials (ADC)** - the same auth method used by `gcloud`, Terraform, and other Google tools. Setup is one command:
+### Option 1: OAuth (Recommended)
+- Just sign in with your Google account
+- No gcloud CLI needed
+- Works with personal Gmail and Google Workspace accounts
+- Tokens stored securely in `~/.config/g-workspace-mcp/`
 
-```bash
-gcloud auth application-default login
-```
+### Option 2: ADC (Application Default Credentials)
+- Uses gcloud CLI (same as Terraform, other Google tools)
+- Ideal for enterprise users with existing gcloud setup
+- Requires a quota project with Workspace APIs enabled
 
-No GCP project access needed. No credentials files to manage. Works with your existing Google Workspace account - ideal for enterprise users whose organizations manage Google Workspace centrally.
+**Both options work with personal Gmail accounts and enterprise Google Workspace accounts.**
 
 ## Features
 
@@ -116,46 +116,50 @@ The command will show what it's about to do and ask for confirmation.
 
 ## Authentication Details
 
-This MCP uses **Application Default Credentials (ADC)** - the same method used by the analyzer tool.
+This MCP supports two authentication methods. Use whichever suits your setup.
+
+### OAuth Token Storage
+
+OAuth tokens are stored securely in:
+- **Location**: `~/.config/g-workspace-mcp/token.json`
+- **Permissions**: 600 (owner read/write only)
+- **Refresh**: Tokens auto-refresh when expired
+
+### ADC Token Storage
+
+ADC tokens are stored in:
+- **Linux/macOS**: `~/.config/gcloud/application_default_credentials.json`
+
+When re-authenticating with ADC, the setup command automatically backs up your existing credentials:
+```
+~/.config/gcloud/application_default_credentials.json.backup.<timestamp>
+```
+
+### Token Lifetime
 
 - **Access tokens** last ~1 hour and auto-refresh
 - **Refresh tokens** last until revoked or unused for 6 months
 - If authentication expires, run `g-workspace-mcp setup` again
 
-### Token Storage Location
-
-ADC stores tokens in:
-- **Linux**: `~/.config/gcloud/application_default_credentials.json`
-- **macOS**: `~/.config/gcloud/application_default_credentials.json`
-
-### Re-authenticate
-
-If you need to re-authenticate:
-```bash
-g-workspace-mcp setup
-```
-
-This will automatically backup your existing credentials before making changes. Backups are saved as:
-```
-~/.config/gcloud/application_default_credentials.json.backup.<timestamp>
-```
-
-Or manually (no backup):
-```bash
-gcloud auth application-default login
-```
-
 ## CLI Commands
 
 ```bash
-# Set up authentication (opens browser)
+# Set up authentication (interactive - choose OAuth or ADC)
 g-workspace-mcp setup
+
+# Set up with specific method
+g-workspace-mcp setup --oauth          # OAuth flow (recommended)
+g-workspace-mcp setup --adc            # ADC/gcloud flow
 
 # Configure MCP for AI tools (shows help if no format specified)
 g-workspace-mcp config -f <claude|cursor|gemini|json> [-s user|project]
 
 # Check authentication status
 g-workspace-mcp status
+
+# Remove stored credentials
+g-workspace-mcp logout                 # Remove OAuth token
+g-workspace-mcp logout --all           # Also show ADC removal instructions
 
 # Run MCP server (called by AI tools automatically)
 g-workspace-mcp run
@@ -297,9 +301,10 @@ gemini mcp list
 
 ## Security
 
-- All API scopes are **read-only**
-- Uses Google's Application Default Credentials
+- All API scopes are **read-only** for safety
+- OAuth tokens stored with **600 permissions** (owner read/write only)
 - No credentials files to manage or share
+- Client secrets (if using OAuth) should never be committed to git
 
 ## Troubleshooting
 

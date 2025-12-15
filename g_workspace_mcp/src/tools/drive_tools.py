@@ -8,11 +8,10 @@ Provides:
 """
 
 import io
-import json
 from typing import Any, Dict, Literal, Optional
 
-from googleapiclient.http import MediaIoBaseDownload
 from googleapiclient.errors import HttpError
+from googleapiclient.http import MediaIoBaseDownload
 
 from g_workspace_mcp.src.auth.google_oauth import get_auth
 from g_workspace_mcp.utils.pylogger import get_python_logger
@@ -197,9 +196,7 @@ def drive_get_content(
         service = get_auth().get_service("drive", "v3")
 
         # Get file metadata
-        file_meta = (
-            service.files().get(fileId=file_id, fields="id, name, mimeType, size").execute()
-        )
+        file_meta = service.files().get(fileId=file_id, fields="id, name, mimeType, size").execute()
 
         mime_type = file_meta.get("mimeType", "")
         file_name = file_meta.get("name", "Unknown")
@@ -215,17 +212,23 @@ def drive_get_content(
             }.get(export_format, "text/plain")
 
             content_bytes = service.files().export(fileId=file_id, mimeType=export_mime).execute()
-            content = content_bytes.decode("utf-8") if isinstance(content_bytes, bytes) else content_bytes
+            content = (
+                content_bytes.decode("utf-8") if isinstance(content_bytes, bytes) else content_bytes
+            )
 
         # Handle Google Sheets
         elif mime_type == "application/vnd.google-apps.spreadsheet":
             content_bytes = service.files().export(fileId=file_id, mimeType="text/csv").execute()
-            content = content_bytes.decode("utf-8") if isinstance(content_bytes, bytes) else content_bytes
+            content = (
+                content_bytes.decode("utf-8") if isinstance(content_bytes, bytes) else content_bytes
+            )
 
         # Handle Google Slides
         elif mime_type == "application/vnd.google-apps.presentation":
             content_bytes = service.files().export(fileId=file_id, mimeType="text/plain").execute()
-            content = content_bytes.decode("utf-8") if isinstance(content_bytes, bytes) else content_bytes
+            content = (
+                content_bytes.decode("utf-8") if isinstance(content_bytes, bytes) else content_bytes
+            )
 
         # Handle regular files (text, json, etc.)
         elif mime_type.startswith("text/") or mime_type == "application/json":

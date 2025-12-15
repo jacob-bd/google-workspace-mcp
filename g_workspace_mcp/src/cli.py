@@ -2,7 +2,7 @@
 CLI for Google Workspace MCP Server.
 
 Provides:
-- setup: Run gcloud auth for Application Default Credentials
+- setup: Authenticate with Google (OAuth or ADC)
 - serve: Start the MCP server
 - config: Print MCP configuration for Claude Code/Cursor
 """
@@ -17,6 +17,14 @@ from pathlib import Path
 import click
 from rich.console import Console
 from rich.panel import Panel
+
+# Import shared constants from auth module (single source of truth)
+from g_workspace_mcp.src.auth.google_oauth import (
+    CLIENT_SECRET_FILE,
+    CONFIG_DIR,
+    SCOPES,
+    TOKEN_FILE,
+)
 
 console = Console()
 
@@ -37,6 +45,7 @@ def _check_adc_configured() -> bool:
     """Check if Application Default Credentials are configured."""
     try:
         from g_workspace_mcp.src.auth.google_oauth import get_auth
+
         return get_auth().is_authenticated()
     except Exception:
         return False
@@ -120,20 +129,16 @@ def _test_workspace_api_access() -> tuple[bool, str]:
             return (False, "other")
 
 
-# All scopes needed - includes cloud-platform to not break other GCP tools
-REQUIRED_SCOPES = [
-    "https://www.googleapis.com/auth/drive.readonly",
-    "https://www.googleapis.com/auth/gmail.readonly",
-    "https://www.googleapis.com/auth/calendar.readonly",
-    "https://www.googleapis.com/auth/spreadsheets.readonly",
-    "https://www.googleapis.com/auth/cloud-platform",  # For Claude Code/Vertex and other GCP tools
-]
+# ADC scopes: workspace scopes + cloud-platform (to not break other GCP tools)
+ADC_EXTRA_SCOPE = "https://www.googleapis.com/auth/cloud-platform"
 
 
 def _run_gcloud_auth() -> bool:
     """Run gcloud auth application-default login with all required scopes."""
     try:
-        scope_arg = ",".join(REQUIRED_SCOPES)
+        # Use shared SCOPES + cloud-platform for ADC
+        adc_scopes = list(SCOPES) + [ADC_EXTRA_SCOPE]
+        scope_arg = ",".join(adc_scopes)
 
         console.print("  [dim]Scopes: drive, gmail, calendar, sheets, cloud-platform[/dim]")
 
@@ -148,24 +153,160 @@ def _run_gcloud_auth() -> bool:
 
 
 @main.command()
-def setup():
+@click.option(
+    "--oauth", "auth_method", flag_value="oauth", help="Use OAuth authentication (recommended)"
+)
+@click.option(
+    "--adc", "auth_method", flag_value="adc", help="Use Application Default Credentials (gcloud)"
+)
+@click.option(
+    "--client-secret", type=click.Path(exists=True), help="Path to client_secret.json for OAuth"
+)
+def setup(auth_method: str | None, client_secret: str | None):
     """
-    Set up Google authentication using Application Default Credentials.
+    Set up Google authentication.
 
-    This uses the same authentication method as the analyzer tool.
-    No GCP project access required - just a Google account.
+    Two authentication methods are available:
+
+    \b
+    OAuth (recommended):
+      - Just sign in with your Google account
+      - No gcloud CLI needed
+      - Works with personal Gmail and Google Workspace accounts
+      - Tokens stored locally in ~/.config/g-workspace-mcp/
+
+    \b
+    ADC (Application Default Credentials):
+      - Uses gcloud CLI
+      - For users who already have gcloud configured
+      - Requires a quota project with Workspace APIs enabled
     """
-    console.print(Panel.fit(
-        "[bold blue]Google Workspace MCP Setup[/bold blue]",
-        border_style="blue"
-    ))
+    console.print(
+        Panel.fit("[bold blue]Google Workspace MCP Setup[/bold blue]", border_style="blue")
+    )
 
-    # Step 1: Check gcloud CLI
-    console.print("\n[yellow]Step 1:[/yellow] Checking gcloud CLI installation")
+    # Step 1: Check existing authentication
+    console.print("\n[yellow]Step 1:[/yellow] Checking existing authentication")
 
-    if _check_gcloud_installed():
-        console.print("  [green]✓[/green] gcloud CLI is installed")
+    from g_workspace_mcp.src.auth.google_oauth import get_auth
+
+    auth = get_auth()
+    has_oauth = auth.has_oauth_token()
+    has_adc = auth.has_adc()
+
+    if has_oauth:
+        console.print("  [green]✓[/green] OAuth token found")
+        console.print(f"      [dim]{TOKEN_FILE}[/dim]")
+    if has_adc:
+        console.print("  [green]✓[/green] ADC credentials found")
+
+    # If user explicitly requested a specific method, skip the "already working" check
+    if auth_method is not None:
+        console.print(f"\n  [cyan]ℹ[/cyan] Using requested method: {auth_method}")
+    elif has_oauth or has_adc:
+        # Test if current auth works (only if no explicit method requested)
+        console.print("\n[yellow]Step 2:[/yellow] Testing Google Workspace API access")
+        success, error_type = _test_workspace_api_access()
+
+        if success:
+            console.print("  [green]✓[/green] Workspace APIs accessible!")
+            console.print("\n[green]Setup complete![/green]")
+            console.print("\nRun [bold]g-workspace-mcp config[/bold] to get MCP configuration")
+            return
+
+        console.print(f"  [yellow]![/yellow] API test failed: {error_type}")
+        console.print("  Re-authentication needed.")
+
+    # Step 2/3: Choose authentication method
+    if auth_method is None:
+        console.print("\n[yellow]Step 2:[/yellow] Choose authentication method\n")
+        console.print("  [bold][1] OAuth[/bold] [green](recommended)[/green]")
+        console.print("      Sign in with your Google account via browser")
+        console.print("      No gcloud CLI needed, works with any Google account")
+        console.print("")
+        console.print("  [bold][2] ADC[/bold] (Application Default Credentials)")
+        console.print("      Uses gcloud CLI, requires quota project with APIs enabled")
+        console.print("      For advanced users with existing gcloud setup")
+        console.print("")
+
+        choice = click.prompt("Choose method", type=click.Choice(["1", "2"]), default="1")
+        auth_method = "oauth" if choice == "1" else "adc"
+
+    # OAuth flow
+    if auth_method == "oauth":
+        _run_oauth_setup(client_secret)
+
+    # ADC flow
     else:
+        _run_adc_setup()
+
+
+def _run_oauth_setup(client_secret_path: str | None):
+    """Run OAuth authentication setup."""
+    from g_workspace_mcp.src.auth.google_oauth import run_oauth_flow
+
+    console.print("\n[yellow]OAuth Setup[/yellow]")
+
+    # Check for client secret
+    secret_path = Path(client_secret_path) if client_secret_path else CLIENT_SECRET_FILE
+
+    if not secret_path.exists():
+        # Check if user has a client secret file somewhere
+        console.print("\n  [yellow]![/yellow] Client secret file not found")
+        console.print(f"      Expected at: [dim]{CLIENT_SECRET_FILE}[/dim]")
+        console.print("""
+  To use OAuth, you need a client_secret.json file from Google Cloud Console:
+
+  1. Go to https://console.cloud.google.com/
+  2. Create a project (or select existing)
+  3. Go to APIs & Services > Credentials
+  4. Create OAuth Client ID (Desktop app)
+  5. Download the JSON file
+  6. Copy it to: [bold]~/.config/g-workspace-mcp/client_secret.json[/bold]
+
+  Or run: [bold]g-workspace-mcp setup --client-secret /path/to/your/file.json[/bold]
+""")
+        sys.exit(1)
+
+    # Copy client secret to config dir if not already there
+    if client_secret_path and Path(client_secret_path) != CLIENT_SECRET_FILE:
+        import os
+        import stat
+
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(client_secret_path, CLIENT_SECRET_FILE)
+        # Set secure permissions (600 - owner read/write only)
+        os.chmod(CLIENT_SECRET_FILE, stat.S_IRUSR | stat.S_IWUSR)
+        console.print(f"  [green]✓[/green] Copied client secret to {CLIENT_SECRET_FILE}")
+        secret_path = CLIENT_SECRET_FILE
+
+    console.print("  [green]✓[/green] Client secret found")
+    console.print("\n  Opening browser for authentication...")
+    console.print("  [dim](Sign in with your Google account and authorize access)[/dim]\n")
+
+    if run_oauth_flow(secret_path):
+        # Verify it worked
+        success, _ = _test_workspace_api_access()
+        if success:
+            console.print("\n  [green]✓[/green] Authentication successful!")
+            console.print(f"  [green]✓[/green] Token saved to {TOKEN_FILE}")
+            console.print("\n[green]Setup complete![/green]")
+            console.print("\nRun [bold]g-workspace-mcp config[/bold] to get MCP configuration")
+        else:
+            console.print("\n  [yellow]![/yellow] Authentication completed but API test failed")
+            console.print("  The APIs may not be enabled in your Google Cloud project.")
+            sys.exit(1)
+    else:
+        console.print("\n  [red]✗[/red] Authentication failed or was cancelled")
+        sys.exit(1)
+
+
+def _run_adc_setup():
+    """Run ADC (gcloud) authentication setup."""
+    console.print("\n[yellow]ADC Setup[/yellow]")
+
+    # Check gcloud CLI
+    if not _check_gcloud_installed():
         console.print("  [red]✗[/red] gcloud CLI not found")
         console.print("""
   Please install the Google Cloud CLI:
@@ -182,90 +323,32 @@ def setup():
   [bold]Or download from:[/bold]
     https://cloud.google.com/sdk/docs/install
 
-  After installing, run: [bold]g-workspace-mcp setup[/bold]
+  Alternatively, use OAuth instead: [bold]g-workspace-mcp setup --oauth[/bold]
 """)
         sys.exit(1)
 
-    # Step 2: Check existing credentials
-    console.print("\n[yellow]Step 2:[/yellow] Checking existing credentials")
+    console.print("  [green]✓[/green] gcloud CLI is installed")
 
+    # Check existing ADC
     adc_path = _get_adc_file_path()
     existing_adc = _read_adc_file()
     existing_quota_project = None
 
     if existing_adc:
-        console.print("  [green]✓[/green] Found existing credentials at:")
-        console.print(f"      [dim]{adc_path}[/dim]")
-
+        console.print(f"  [green]✓[/green] Existing ADC found at {adc_path}")
         existing_quota_project = existing_adc.get("quota_project_id")
         if existing_quota_project:
             console.print(f"  [cyan]ℹ[/cyan] Quota project: [bold]{existing_quota_project}[/bold]")
-        else:
-            console.print("  [dim]  No quota_project_id set in credentials[/dim]")
-    else:
-        console.print("  [dim]  No existing credentials found[/dim]")
 
-    # Step 3: Test Workspace API access
-    console.print("\n[yellow]Step 3:[/yellow] Testing Google Workspace API access")
-
-    success, error_type = _test_workspace_api_access()
-
-    if success:
-        console.print("  [green]✓[/green] Workspace APIs accessible!")
-        if existing_quota_project:
-            console.print(f"  [green]✓[/green] Quota project [bold]{existing_quota_project}[/bold] has required APIs enabled")
-        console.print("\n[green]Setup complete![/green]")
-        console.print("\nRun [bold]g-workspace-mcp config[/bold] to get MCP configuration")
-        return
-
-    # Handle different error types
-    if error_type == "no_adc":
-        console.print("  [yellow]![/yellow] No authentication found")
-        console.print("\n  You need to authenticate with Google.")
-
-    elif error_type == "insufficient_scopes":
-        console.print("  [yellow]![/yellow] Missing required scopes")
-        console.print("\n  Your current authentication doesn't include Workspace API scopes.")
-        console.print("  Re-authentication is needed to add: drive, gmail, calendar, sheets")
-        console.print("  [dim](cloud-platform scope will also be included to not break other tools)[/dim]")
-        if existing_quota_project:
-            console.print(f"\n  [cyan]ℹ[/cyan] Your quota project [bold]{existing_quota_project}[/bold] will need to be re-set after auth.")
-
-    elif error_type == "api_not_enabled":
-        console.print("  [red]✗[/red] API not enabled on quota project")
-        if existing_quota_project:
-            console.print(f"\n  Your quota project [bold]{existing_quota_project}[/bold] doesn't have Workspace APIs enabled.")
-        console.print("""
-  [bold]Option 1:[/bold] Change quota project to one with APIs enabled:
-    gcloud auth application-default set-quota-project <PROJECT_WITH_APIS>
-
-  [bold]Option 2:[/bold] Enable APIs on your current quota project (if you have access)
-
-  [dim]For Red Hat users: try 'redhat-ai-analysis' as the quota project[/dim]
-""")
-        sys.exit(1)
-
-    else:
-        console.print(f"  [red]✗[/red] API test failed: {error_type}")
-        console.print("  Try running setup again or check your network connection")
-        sys.exit(1)
-
-    # Step 4: Backup and authenticate
-    console.print("\n[yellow]Step 4:[/yellow] Authentication required")
-
-    # Create backup before making changes
+    # Backup before making changes
     backup_path = None
     if existing_adc:
         backup_path = _backup_adc_file()
         if backup_path:
-            console.print("\n  [cyan]ℹ[/cyan] Backing up existing credentials to:")
-            console.print(f"      [dim]{backup_path}[/dim]")
-        else:
-            console.print("\n  [yellow]![/yellow] Could not create backup of existing credentials")
+            console.print(f"  [cyan]ℹ[/cyan] Backed up to: [dim]{backup_path}[/dim]")
 
     if not click.confirm("\nDo you want to authenticate now?", default=True):
         console.print("\n[yellow]Cancelled.[/yellow]")
-        console.print("Run [bold]g-workspace-mcp setup[/bold] when ready to authenticate")
         sys.exit(0)
 
     console.print("\n  Opening browser for authentication...")
@@ -273,27 +356,28 @@ def setup():
 
     if _run_gcloud_auth():
         # Verify it worked
-        success, _ = _test_workspace_api_access()
+        success, error_type = _test_workspace_api_access()
         if success:
             console.print("\n  [green]✓[/green] Authentication successful!")
             console.print("\n[green]Setup complete![/green]")
             console.print("\nRun [bold]g-workspace-mcp config[/bold] to get MCP configuration")
         else:
             console.print("\n  [yellow]![/yellow] Authentication completed but API test failed")
-            console.print("  This might be a quota project issue.")
+            if error_type == "api_not_enabled":
+                console.print("  This is likely a quota project issue.")
+                console.print("\n  Set a quota project with Workspace APIs enabled:")
+                console.print(
+                    "    [bold]gcloud auth application-default set-quota-project <PROJECT>[/bold]"
+                )
             if existing_quota_project:
-                console.print(f"\n  [cyan]ℹ[/cyan] Your previous quota project was: [bold]{existing_quota_project}[/bold]")
-                console.print("  To restore it, run:")
-                console.print(f"    [bold]gcloud auth application-default set-quota-project {existing_quota_project}[/bold]")
-            else:
-                console.print("  Check:")
-                console.print("    cat ~/.config/gcloud/application_default_credentials.json | grep quota")
+                console.print(
+                    f"\n  Your previous quota project was: [bold]{existing_quota_project}[/bold]"
+                )
             sys.exit(1)
     else:
         console.print("\n  [red]✗[/red] Authentication failed or was cancelled")
-        if existing_adc and backup_path:
-            console.print("\n  [cyan]ℹ[/cyan] Your previous credentials were backed up to:")
-            console.print(f"      [dim]{backup_path}[/dim]")
+        if backup_path:
+            console.print(f"\n  [cyan]ℹ[/cyan] Backup available at: [dim]{backup_path}[/dim]")
         sys.exit(1)
 
 
@@ -306,12 +390,26 @@ def run():
     You don't need to run this manually.
     """
     from g_workspace_mcp.src.main import main as run_server
+
     run_server()
 
 
 @main.command()
-@click.option("--format", "-f", "output_format", type=click.Choice(["claude", "cursor", "gemini", "json"]), default=None, help="Target AI tool: claude, cursor, gemini, or json")
-@click.option("--scope", "-s", type=click.Choice(["user", "project"]), default="user", help="Scope: user (system-wide) or project (current directory)")
+@click.option(
+    "--format",
+    "-f",
+    "output_format",
+    type=click.Choice(["claude", "cursor", "gemini", "json"]),
+    default=None,
+    help="Target AI tool: claude, cursor, gemini, or json",
+)
+@click.option(
+    "--scope",
+    "-s",
+    type=click.Choice(["user", "project"]),
+    default="user",
+    help="Scope: user (system-wide) or project (current directory)",
+)
 def config(output_format: str, scope: str):
     """
     Configure MCP for AI tools.
@@ -320,18 +418,21 @@ def config(output_format: str, scope: str):
     """
     # Show help if no format specified
     if output_format is None:
-        console.print(Panel.fit(
-            "[bold blue]MCP Configuration[/bold blue]",
-            border_style="blue"
-        ))
+        console.print(Panel.fit("[bold blue]MCP Configuration[/bold blue]", border_style="blue"))
         console.print("\n[yellow]Usage:[/yellow] g-workspace-mcp config -f <format>\n")
         console.print("[yellow]Available formats:[/yellow]")
-        console.print("  [bold]claude[/bold]   - Configure Claude Code (runs 'claude mcp add' automatically)")
-        console.print("  [bold]gemini[/bold]   - Configure Gemini CLI (runs 'gemini mcp add' automatically)")
+        console.print(
+            "  [bold]claude[/bold]   - Configure Claude Code (runs 'claude mcp add' automatically)"
+        )
+        console.print(
+            "  [bold]gemini[/bold]   - Configure Gemini CLI (runs 'gemini mcp add' automatically)"
+        )
         console.print("  [bold]cursor[/bold]   - Show JSON config for Cursor (manual copy)")
         console.print("  [bold]json[/bold]     - Raw JSON output for other tools")
         console.print("\n[yellow]Options:[/yellow]")
-        console.print("  [bold]-s, --scope[/bold]  user (system-wide) or project (current directory)")
+        console.print(
+            "  [bold]-s, --scope[/bold]  user (system-wide) or project (current directory)"
+        )
         console.print("\n[yellow]Examples:[/yellow]")
         console.print("  g-workspace-mcp config -f claude")
         console.print("  g-workspace-mcp config -f gemini -s project")
@@ -375,12 +476,7 @@ def config(output_format: str, scope: str):
         console.print("\n[bold]Cursor Configuration[/bold]")
         console.print("Add to Cursor MCP settings:\n")
 
-        config_json = {
-            "google-workspace": {
-                "command": cmd_path,
-                "args": ["run"]
-            }
-        }
+        config_json = {"google-workspace": {"command": cmd_path, "args": ["run"]}}
         console.print_json(json.dumps(config_json, indent=2))
 
     elif output_format == "gemini":
@@ -416,11 +512,7 @@ def config(output_format: str, scope: str):
 
     elif output_format == "json":
         # Raw JSON for programmatic use
-        config_json = {
-            "command": cmd_path,
-            "args": ["run"],
-            "env": {}
-        }
+        config_json = {"command": cmd_path, "args": ["run"], "env": {}}
         print(json.dumps(config_json))
 
 
@@ -429,30 +521,104 @@ def status():
     """
     Check authentication status.
 
-    Shows whether gcloud and Application Default Credentials are configured.
+    Shows OAuth token and ADC status.
     """
-    console.print(Panel.fit(
-        "[bold blue]Google Workspace MCP Status[/bold blue]",
-        border_style="blue"
-    ))
+    console.print(
+        Panel.fit("[bold blue]Google Workspace MCP Status[/bold blue]", border_style="blue")
+    )
 
-    # Check gcloud CLI
-    console.print("\n[yellow]gcloud CLI:[/yellow]")
-    if _check_gcloud_installed():
-        gcloud_path = shutil.which("gcloud")
-        console.print(f"  [green]✓[/green] Installed at {gcloud_path}")
+    from g_workspace_mcp.src.auth.google_oauth import get_auth
+
+    auth = get_auth()
+
+    # Check OAuth
+    console.print("\n[yellow]OAuth:[/yellow]")
+    if TOKEN_FILE.exists():
+        if auth.has_oauth_token():
+            console.print("  [green]✓[/green] Token valid")
+            console.print(f"      [dim]{TOKEN_FILE}[/dim]")
+        else:
+            console.print("  [yellow]![/yellow] Token expired or invalid")
+            console.print(f"      [dim]{TOKEN_FILE}[/dim]")
     else:
-        console.print("  [red]✗[/red] Not installed - run 'g-workspace-mcp setup' for instructions")
-        return
+        console.print("  [dim]  No OAuth token[/dim]")
 
     # Check ADC
-    console.print("\n[yellow]Authentication:[/yellow]")
-    if _check_adc_configured():
-        console.print("  [green]✓[/green] Application Default Credentials configured")
+    console.print("\n[yellow]ADC (gcloud):[/yellow]")
+    if _check_gcloud_installed():
+        gcloud_path = shutil.which("gcloud")
+        console.print(f"  [green]✓[/green] gcloud installed at {gcloud_path}")
+
+        adc_path = _get_adc_file_path()
+        if adc_path.exists():
+            if auth.has_adc():
+                console.print("  [green]✓[/green] ADC credentials valid")
+            else:
+                console.print("  [yellow]![/yellow] ADC credentials expired or invalid")
+            console.print(f"      [dim]{adc_path}[/dim]")
+
+            existing_adc = _read_adc_file()
+            if existing_adc and existing_adc.get("quota_project_id"):
+                console.print(f"  [cyan]ℹ[/cyan] Quota project: {existing_adc['quota_project_id']}")
+        else:
+            console.print("  [dim]  No ADC credentials[/dim]")
+    else:
+        console.print("  [dim]  gcloud not installed[/dim]")
+
+    # Overall status
+    console.print("\n[yellow]API Access:[/yellow]")
+    success, error_type = _test_workspace_api_access()
+    if success:
+        console.print("  [green]✓[/green] Workspace APIs accessible!")
         console.print("  [green]✓[/green] Ready to use!")
     else:
-        console.print("  [red]✗[/red] Not authenticated")
+        console.print(f"  [red]✗[/red] API test failed: {error_type}")
         console.print("  Run: [bold]g-workspace-mcp setup[/bold]")
+
+
+@main.command()
+@click.option("--oauth", "logout_oauth", is_flag=True, help="Remove OAuth token only")
+@click.option(
+    "--all", "logout_all", is_flag=True, help="Remove OAuth token and show ADC instructions"
+)
+def logout(logout_oauth: bool, logout_all: bool):
+    """
+    Remove stored authentication tokens.
+
+    By default, removes the OAuth token. Use --all to also get instructions
+    for clearing ADC credentials.
+    """
+    console.print(
+        Panel.fit("[bold blue]Google Workspace MCP Logout[/bold blue]", border_style="blue")
+    )
+
+    removed_something = False
+
+    # Remove OAuth token
+    if TOKEN_FILE.exists():
+        TOKEN_FILE.unlink()
+        console.print("\n  [green]✓[/green] Removed OAuth token")
+        console.print(f"      [dim]{TOKEN_FILE}[/dim]")
+        removed_something = True
+    else:
+        console.print("\n  [dim]  No OAuth token found[/dim]")
+
+    # Show ADC instructions if --all
+    if logout_all:
+        adc_path = _get_adc_file_path()
+        if adc_path.exists():
+            console.print("\n  [cyan]ℹ[/cyan] To remove ADC credentials, run:")
+            console.print("      [bold]gcloud auth application-default revoke[/bold]")
+            console.print(f"\n  Or manually delete: [dim]{adc_path}[/dim]")
+        else:
+            console.print("\n  [dim]  No ADC credentials found[/dim]")
+
+    if removed_something:
+        console.print("\n[green]Logged out successfully.[/green]")
+        console.print("\nRun [bold]g-workspace-mcp setup[/bold] to re-authenticate.")
+    elif not logout_all:
+        console.print("\n[yellow]Nothing to remove.[/yellow]")
+        console.print("Use [bold]--all[/bold] to see ADC logout instructions.")
 
 
 if __name__ == "__main__":

@@ -53,6 +53,8 @@ htmlcov/
 credentials.json
 token.json
 client_secrets.json
+client_secret*.json
+.claude/client_secret*.json
 
 # Logs
 *.log

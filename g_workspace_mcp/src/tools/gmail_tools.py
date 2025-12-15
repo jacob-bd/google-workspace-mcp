@@ -8,7 +8,7 @@ Provides:
 """
 
 import base64
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from g_workspace_mcp.src.auth.google_oauth import get_auth
 from g_workspace_mcp.utils.pylogger import get_python_logger
@@ -129,9 +129,7 @@ def gmail_get_message(message_id: str) -> Dict[str, Any]:
         )
 
         # Extract headers
-        headers = {
-            h["name"]: h["value"] for h in message.get("payload", {}).get("headers", [])
-        }
+        headers = {h["name"]: h["value"] for h in message.get("payload", {}).get("headers", [])}
 
         # Extract body
         def get_body(payload: dict) -> str:

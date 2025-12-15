@@ -79,7 +79,7 @@ def sheets_read(
 
         all_values = result.get("values", [])
         total_count = len(all_values)
-        
+
         # Apply row limit
         values = all_values[:row_limit]
         is_truncated = total_count > row_limit
@@ -105,8 +105,7 @@ def sheets_read(
         try:
             metadata = service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
             sheet_names = [
-                s.get("properties", {}).get("title", "Unknown")
-                for s in metadata.get("sheets", [])
+                s.get("properties", {}).get("title", "Unknown") for s in metadata.get("sheets", [])
             ]
             available_sheets = ", ".join(f"'{n}'" for n in sheet_names)
             error_msg = f"Failed to read range '{range_notation}'. Available sheets: [{available_sheets}]. Error: {e}"
