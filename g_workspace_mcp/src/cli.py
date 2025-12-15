@@ -465,7 +465,7 @@ def config(output_format: str, scope: str):
             result = subprocess.run(cmd, check=False)
             if result.returncode == 0:
                 console.print("\n[green]✓[/green] MCP server added to Claude Code!")
-                console.print("Verify with: [bold]/mcp[/bold] command inside Claude Code")
+                console.print("Verify with: [bold]claude mcp list[/bold]")
             else:
                 console.print("\n[red]✗[/red] Failed to add MCP server")
                 sys.exit(1)
