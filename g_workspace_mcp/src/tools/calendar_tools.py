@@ -97,8 +97,13 @@ def calendar_get_events(
         now = datetime.utcnow()
         if time_min is None:
             time_min = now.isoformat() + "Z"
+        elif not time_min.endswith("Z") and "+" not in time_min and "-" not in time_min[-6:]:
+             time_min = time_min + "Z"
+
         if time_max is None:
             time_max = (now + timedelta(days=7)).isoformat() + "Z"
+        elif not time_max.endswith("Z") and "+" not in time_max and "-" not in time_max[-6:]:
+             time_max = time_max + "Z"
 
         # Build request
         request_params = {
