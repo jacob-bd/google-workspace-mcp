@@ -236,8 +236,9 @@ g-workspace-mcp setup
 g-workspace-mcp setup --oauth          # OAuth flow (requires client_secret.json)
 g-workspace-mcp setup --adc            # ADC/gcloud flow (for enterprise users)
 
-# Configure MCP for AI tools (shows help if no format specified)
-g-workspace-mcp config -f <claude|cursor|gemini|json> [-s user|project]
+# Configure MCP for AI tools (default: system-wide)
+g-workspace-mcp config -f <claude|cursor|gemini|json>
+g-workspace-mcp config -f claude -s project      # Project-level instead
 
 # Check authentication status
 g-workspace-mcp status
@@ -315,7 +316,11 @@ Add to `~/.claude/mcp_servers.json`:
 
 **Verify installation:**
 
-Use the `/mcp` command inside Claude Code to verify the server is configured.
+```bash
+claude mcp list
+```
+
+Or use the `/mcp` command inside Claude Code to verify the server is configured.
 
 ### Cursor
 

@@ -408,7 +408,7 @@ def run():
     "-s",
     type=click.Choice(["user", "project"]),
     default="user",
-    help="Scope: user (system-wide) or project (current directory)",
+    help="Scope: user (system-wide, default) or project (current directory)",
 )
 def config(output_format: str, scope: str):
     """
@@ -431,7 +431,7 @@ def config(output_format: str, scope: str):
         console.print("  [bold]json[/bold]     - Raw JSON output for other tools")
         console.print("\n[yellow]Options:[/yellow]")
         console.print(
-            "  [bold]-s, --scope[/bold]  user (system-wide) or project (current directory)"
+            "  [bold]-s, --scope[/bold]  user (system-wide, default) or project (current directory)"
         )
         console.print("\n[yellow]Examples:[/yellow]")
         console.print("  g-workspace-mcp config -f claude")
