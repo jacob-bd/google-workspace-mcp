@@ -423,6 +423,23 @@ Re-authenticate:
 g-workspace-mcp setup
 ```
 
+### "ModuleNotFoundError: No module named 'google.auth'" or similar import errors
+
+If you see import errors when trying to run Python files directly, **don't run source files**.
+The MCP server is installed as a CLI tool. Always use:
+
+```bash
+g-workspace-mcp status   # Check authentication
+g-workspace-mcp run      # Run the server
+```
+
+Do NOT try to run source files directly:
+```bash
+# These will fail:
+python3 g_workspace_mcp/src/cli.py status  # WRONG
+python3 -m g_workspace_mcp.src.cli status  # WRONG
+```
+
 ### Check Status
 
 ```bash

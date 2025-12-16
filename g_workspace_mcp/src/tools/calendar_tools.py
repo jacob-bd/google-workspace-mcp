@@ -6,13 +6,79 @@ Provides:
 - calendar_get_events: Get events in date range
 """
 
-from datetime import datetime, timedelta
+import re
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
 from g_workspace_mcp.src.auth.google_oauth import get_auth
 from g_workspace_mcp.utils.pylogger import get_python_logger
 
 logger = get_python_logger()
+
+# Cache for user's timezone
+_user_timezone_cache: Optional[str] = None
+
+
+def _get_user_timezone() -> str:
+    """
+    Fetch user's timezone from their primary calendar settings.
+    Caches the result to avoid repeated API calls.
+
+    Returns:
+        Timezone string (e.g., 'America/New_York') or 'UTC' as fallback
+    """
+    global _user_timezone_cache
+
+    if _user_timezone_cache is not None:
+        return _user_timezone_cache
+
+    try:
+        service = get_auth().get_service("calendar", "v3")
+        calendar = service.calendars().get(calendarId="primary").execute()
+        _user_timezone_cache = calendar.get("timeZone", "UTC")
+        logger.info(f"Fetched user timezone: {_user_timezone_cache}")
+        return _user_timezone_cache
+    except Exception as e:
+        logger.warning(f"Failed to fetch user timezone, defaulting to UTC: {e}")
+        return "UTC"
+
+
+def _normalize_timestamp(timestamp: str) -> str:
+    """
+    Normalize a timestamp to RFC3339 format required by Google Calendar API.
+
+    Handles various input formats:
+    - ISO format with Z suffix: 2025-12-15T00:00:00Z (returned as-is)
+    - ISO format with offset: 2025-12-15T00:00:00-05:00 (returned as-is)
+    - ISO format without timezone: 2025-12-15T00:00:00 (appends Z)
+    - Date only: 2025-12-15 (converts to start of day in UTC)
+
+    Args:
+        timestamp: Input timestamp string
+
+    Returns:
+        RFC3339 formatted timestamp string
+    """
+    if not timestamp:
+        return timestamp
+
+    # Already has Z suffix (UTC)
+    if timestamp.endswith("Z"):
+        return timestamp
+
+    # Check for timezone offset pattern like +05:00, -05:00, +0530, -0530
+    # Must check this BEFORE checking for dashes in the date portion
+    offset_pattern = r'[+-]\d{2}:?\d{2}$'
+    if re.search(offset_pattern, timestamp):
+        return timestamp
+
+    # If it's just a date (YYYY-MM-DD), convert to datetime at midnight UTC
+    date_only_pattern = r'^\d{4}-\d{2}-\d{2}$'
+    if re.match(date_only_pattern, timestamp):
+        return f"{timestamp}T00:00:00Z"
+
+    # No timezone info, append Z for UTC
+    return f"{timestamp}Z"
 
 
 def calendar_list() -> Dict[str, Any]:
@@ -89,21 +155,29 @@ def calendar_get_events(
 
     Returns:
         Dictionary with status and list of events
+
+    Note:
+        The response includes the user's calendar timezone. When querying for
+        "today" or "tonight", callers should account for the user's timezone
+        to ensure correct results.
     """
     try:
         service = get_auth().get_service("calendar", "v3")
 
-        # Set default time range
-        now = datetime.utcnow()
+        # Fetch user's timezone for reference
+        user_timezone = _get_user_timezone()
+
+        # Set default time range using UTC
+        now = datetime.now(timezone.utc)
         if time_min is None:
-            time_min = now.isoformat() + "Z"
-        elif not time_min.endswith("Z") and "+" not in time_min and "-" not in time_min[-6:]:
-             time_min = time_min + "Z"
+            time_min = now.isoformat().replace("+00:00", "Z")
+        else:
+            time_min = _normalize_timestamp(time_min)
 
         if time_max is None:
-            time_max = (now + timedelta(days=7)).isoformat() + "Z"
-        elif not time_max.endswith("Z") and "+" not in time_max and "-" not in time_max[-6:]:
-             time_max = time_max + "Z"
+            time_max = (now + timedelta(days=7)).isoformat().replace("+00:00", "Z")
+        else:
+            time_max = _normalize_timestamp(time_max)
 
         # Build request
         request_params = {
@@ -151,6 +225,7 @@ def calendar_get_events(
         return {
             "status": "success",
             "calendar_id": calendar_id,
+            "user_timezone": user_timezone,
             "time_min": time_min,
             "time_max": time_max,
             "count": len(event_list),
