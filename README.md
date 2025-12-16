@@ -191,8 +191,11 @@ g-workspace-mcp config -f claude
 # Configure Gemini CLI
 g-workspace-mcp config -f gemini
 
-# Get JSON for Cursor or other tools
+# Get JSON config for Cursor or other tools
 g-workspace-mcp config -f cursor
+
+# Get universal JSON format for other AI IDEs
+g-workspace-mcp config -f json
 ```
 
 The command will show what it's about to do and ask for confirmation.
@@ -307,8 +310,7 @@ Add to `~/.claude/mcp_servers.json`:
   "mcpServers": {
     "google-workspace": {
       "command": "g-workspace-mcp",
-      "args": ["run"],
-      "env": {}
+      "args": ["run"]
     }
   }
 }
@@ -382,6 +384,27 @@ For **project-level** access, add to `.gemini/settings.json` in your project dir
 ```bash
 gemini mcp list
 ```
+
+### Other AI IDEs (JSON Format)
+
+For tools not listed above, use the JSON format to get a universal configuration:
+
+```bash
+g-workspace-mcp config -f json
+```
+
+This outputs the standard MCP server configuration that works with any AI IDE:
+
+```json
+{
+  "google-workspace": {
+    "command": "g-workspace-mcp",
+    "args": ["run"]
+  }
+}
+```
+
+Add this to your IDE's MCP configuration file (consult your IDE's documentation for the exact location and format).
 
 ## Environment Variables
 

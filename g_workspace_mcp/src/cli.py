@@ -511,9 +511,9 @@ def config(output_format: str, scope: str):
             console.print("\n[yellow]Cancelled.[/yellow]")
 
     elif output_format == "json":
-        # Raw JSON for programmatic use
-        config_json = {"command": cmd_path, "args": ["run"], "env": {}}
-        print(json.dumps(config_json))
+        # JSON for programmatic use (universal format for all AI IDEs)
+        config_json = {"google-workspace": {"command": cmd_path, "args": ["run"]}}
+        print(json.dumps(config_json, indent=2))
 
 
 @main.command()
