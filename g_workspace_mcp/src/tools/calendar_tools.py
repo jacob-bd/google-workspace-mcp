@@ -10,6 +10,11 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:
+    from backports.zoneinfo import ZoneInfo  # Python < 3.9
+
 from g_workspace_mcp.src.auth.google_oauth import get_auth
 from g_workspace_mcp.utils.pylogger import get_python_logger
 
@@ -43,21 +48,23 @@ def _get_user_timezone() -> str:
         return "UTC"
 
 
-def _normalize_timestamp(timestamp: str) -> str:
+def _normalize_timestamp(timestamp: str, user_tz: str = "UTC") -> str:
     """
     Normalize a timestamp to RFC3339 format required by Google Calendar API.
 
     Handles various input formats:
     - ISO format with Z suffix: 2025-12-15T00:00:00Z (returned as-is)
     - ISO format with offset: 2025-12-15T00:00:00-05:00 (returned as-is)
-    - ISO format without timezone: 2025-12-15T00:00:00 (appends Z)
-    - Date only: 2025-12-15 (converts to start of day in UTC)
+    - ISO format without timezone: 2025-12-15T00:00:00 (interpreted in user's timezone, converted to UTC)
+    - Date only: 2025-12-15 (converts to start of day in user's timezone, converted to UTC)
 
     Args:
         timestamp: Input timestamp string
+        user_tz: User's timezone string (e.g., 'America/Toronto') for interpreting
+                 timestamps without timezone info
 
     Returns:
-        RFC3339 formatted timestamp string
+        RFC3339 formatted timestamp string in UTC
     """
     if not timestamp:
         return timestamp
@@ -72,12 +79,33 @@ def _normalize_timestamp(timestamp: str) -> str:
     if re.search(offset_pattern, timestamp):
         return timestamp
 
-    # If it's just a date (YYYY-MM-DD), convert to datetime at midnight UTC
+    # Get the user's timezone object
+    try:
+        tz = ZoneInfo(user_tz)
+    except Exception:
+        tz = timezone.utc
+
+    # If it's just a date (YYYY-MM-DD), convert to datetime at midnight in user's timezone
     date_only_pattern = r'^\d{4}-\d{2}-\d{2}$'
     if re.match(date_only_pattern, timestamp):
-        return f"{timestamp}T00:00:00Z"
+        # Parse as date, create datetime at midnight in user's timezone
+        dt = datetime.strptime(timestamp, "%Y-%m-%d")
+        dt_local = dt.replace(tzinfo=tz)
+        dt_utc = dt_local.astimezone(timezone.utc)
+        return dt_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    # No timezone info, append Z for UTC
+    # No timezone info - interpret in user's timezone and convert to UTC
+    # Try common datetime formats
+    for fmt in ["%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M"]:
+        try:
+            dt = datetime.strptime(timestamp, fmt)
+            dt_local = dt.replace(tzinfo=tz)
+            dt_utc = dt_local.astimezone(timezone.utc)
+            return dt_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+        except ValueError:
+            continue
+
+    # Fallback: just append Z (shouldn't reach here for valid timestamps)
     return f"{timestamp}Z"
 
 
@@ -164,7 +192,7 @@ def calendar_get_events(
     try:
         service = get_auth().get_service("calendar", "v3")
 
-        # Fetch user's timezone for reference
+        # Fetch user's timezone - used for interpreting timestamps without timezone info
         user_timezone = _get_user_timezone()
 
         # Set default time range using UTC
@@ -172,12 +200,12 @@ def calendar_get_events(
         if time_min is None:
             time_min = now.isoformat().replace("+00:00", "Z")
         else:
-            time_min = _normalize_timestamp(time_min)
+            time_min = _normalize_timestamp(time_min, user_timezone)
 
         if time_max is None:
             time_max = (now + timedelta(days=7)).isoformat().replace("+00:00", "Z")
         else:
-            time_max = _normalize_timestamp(time_max)
+            time_max = _normalize_timestamp(time_max, user_timezone)
 
         # Build request
         request_params = {

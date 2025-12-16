@@ -44,15 +44,37 @@ class TestNormalizeTimestamp:
         ts = "2025-12-15T00:00:00+0530"
         assert _normalize_timestamp(ts) == ts
 
-    def test_no_timezone_appends_z(self):
-        """Timestamps without timezone info should get Z appended."""
+    def test_no_timezone_uses_user_tz_default_utc(self):
+        """Timestamps without timezone info should use user timezone (default UTC)."""
         ts = "2025-12-15T00:00:00"
+        # With default user_tz=UTC, result is same as appending Z
         assert _normalize_timestamp(ts) == "2025-12-15T00:00:00Z"
 
-    def test_date_only_converts_to_datetime(self):
-        """Date-only strings should be converted to datetime at midnight UTC."""
+    def test_no_timezone_converts_from_user_tz(self):
+        """Timestamps without timezone should be interpreted in user's timezone."""
+        ts = "2025-12-15T00:00:00"
+        # Midnight in Toronto (EST, UTC-5) = 05:00 UTC
+        result = _normalize_timestamp(ts, "America/Toronto")
+        assert result == "2025-12-15T05:00:00Z"
+
+    def test_no_timezone_evening_in_user_tz(self):
+        """Evening time in user's timezone should convert correctly."""
+        ts = "2025-12-15T21:00:00"
+        # 9 PM in Toronto (EST, UTC-5) = 02:00 UTC next day
+        result = _normalize_timestamp(ts, "America/Toronto")
+        assert result == "2025-12-16T02:00:00Z"
+
+    def test_date_only_converts_to_datetime_utc(self):
+        """Date-only strings with default UTC should be midnight UTC."""
         ts = "2025-12-15"
         assert _normalize_timestamp(ts) == "2025-12-15T00:00:00Z"
+
+    def test_date_only_uses_user_timezone(self):
+        """Date-only strings should use user's timezone for midnight."""
+        ts = "2025-12-15"
+        # Midnight in Toronto (EST, UTC-5) = 05:00 UTC
+        result = _normalize_timestamp(ts, "America/Toronto")
+        assert result == "2025-12-15T05:00:00Z"
 
     def test_empty_string_returns_empty(self):
         """Empty string should be returned as-is."""
@@ -194,6 +216,27 @@ class TestCalendarGetEvents:
         assert result["status"] == "success"
         assert result["time_min"] == "2025-12-15T00:00:00Z"
         assert result["time_max"] == "2025-12-16T00:00:00Z"
+
+    @patch("g_workspace_mcp.src.tools.calendar_tools._get_user_timezone")
+    @patch("g_workspace_mcp.src.tools.calendar_tools.get_auth")
+    def test_converts_timestamps_using_user_timezone(self, mock_get_auth, mock_get_tz):
+        """Should convert timestamps without timezone using user's timezone."""
+        mock_get_tz.return_value = "America/Toronto"
+        mock_service = MagicMock()
+        mock_service.events().list().execute.return_value = {"items": []}
+        mock_get_auth.return_value.get_service.return_value = mock_service
+
+        # User passes "today" in their local time (no timezone specified)
+        result = calendar_get_events(
+            time_min="2025-12-15T00:00:00",
+            time_max="2025-12-15T23:59:59"
+        )
+
+        assert result["status"] == "success"
+        # Midnight Toronto (EST, UTC-5) = 05:00 UTC
+        assert result["time_min"] == "2025-12-15T05:00:00Z"
+        # 11:59:59 PM Toronto = 04:59:59 UTC next day
+        assert result["time_max"] == "2025-12-16T04:59:59Z"
 
     @patch("g_workspace_mcp.src.tools.calendar_tools._get_user_timezone")
     @patch("g_workspace_mcp.src.tools.calendar_tools.get_auth")
