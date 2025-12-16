@@ -19,6 +19,49 @@ from g_workspace_mcp.utils.pylogger import get_python_logger
 logger = get_python_logger()
 
 
+def _normalize_drive_query(query: str) -> str:
+    """
+    Normalize a search query to proper Drive API syntax.
+
+    If the query already contains Drive operators (contains, =, in, etc.),
+    return it as-is. Otherwise, wrap it in fullText contains syntax.
+
+    Args:
+        query: User's search query
+
+    Returns:
+        Properly formatted Drive API query string
+    """
+    if not query or not query.strip():
+        return query
+
+    # Check if query already has Drive API operators
+    # Common operators: contains, =, !=, <, >, in, and, or, not
+    drive_operators = [
+        " contains ",
+        " = ",
+        " != ",
+        " < ",
+        " > ",
+        " in ",
+        " and ",
+        " or ",
+        "not ",
+    ]
+
+    query_lower = query.lower()
+    has_operators = any(op in query_lower for op in drive_operators)
+
+    if has_operators:
+        # Already formatted, return as-is
+        return query
+
+    # Plain text query - wrap in fullText contains for broad search
+    # fullText searches both file name and content
+    escaped_query = query.replace('"', '\\"')
+    return f'fullText contains "{escaped_query}"'
+
+
 def drive_search(
     query: str,
     max_results: int = 10,
@@ -44,8 +87,10 @@ def drive_search(
     try:
         service = get_auth().get_service("drive", "v3")
 
-        # Build search query
-        search_query = query
+        # Normalize query to proper Drive API syntax
+        search_query = _normalize_drive_query(query)
+
+        # Add file type filter if specified
         if file_type:
             mime_type_map = {
                 "document": "application/vnd.google-apps.document",
@@ -55,7 +100,7 @@ def drive_search(
                 "pdf": "application/pdf",
             }
             if file_type.lower() in mime_type_map:
-                search_query = f"{query} and mimeType='{mime_type_map[file_type.lower()]}'"
+                search_query = f"{search_query} and mimeType='{mime_type_map[file_type.lower()]}'"
 
         # Execute search
         try:
