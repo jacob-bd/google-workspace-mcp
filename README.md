@@ -31,7 +31,7 @@ All access is **read-only** for safety.
 ## Requirements
 
 - **Python 3.11+**
-- **uv** - Fast Python package manager ([install](https://docs.astral.sh/uv/getting-started/installation/))
+- **uv** - Fast Python package manager (<a href="https://docs.astral.sh/uv/getting-started/installation/" target="_blank">install</a>)
 - **Google Cloud CLI** - Only required for ADC authentication (not needed for OAuth)
 
 ## Quick Start
@@ -90,9 +90,19 @@ sudo apt-get install google-cloud-cli
 
 If you're using OAuth instead of ADC, you need to create your own OAuth credentials in Google Cloud Console. This is a one-time setup that takes about 5 minutes.
 
+### Video Walkthrough
+
+Watch this demo showing the GCP OAuth setup process and the tool in action:
+
+<a href="https://www.youtube.com/watch?v=OQ-HcT5Ki7c" target="_blank">
+  <img src="https://img.youtube.com/vi/OQ-HcT5Ki7c/maxresdefault.jpg" alt="Google Workspace MCP Setup Demo" width="600">
+</a>
+
+*Click the image above to open the video in a new window.*
+
 ### Step 1: Create a Google Cloud Project
 
-1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+1. Go to <a href="https://console.cloud.google.com/" target="_blank">Google Cloud Console</a>
 2. Click the project dropdown at the top of the page
 3. Click **New Project**
 4. Enter a project name (e.g., "Workspace MCP")
@@ -101,7 +111,7 @@ If you're using OAuth instead of ADC, you need to create your own OAuth credenti
 
 ### Step 2: Enable APIs
 
-1. Go to **APIs & Services** > **Library** (or [click here](https://console.cloud.google.com/apis/library))
+1. Go to **APIs & Services** > **Library** (or <a href="https://console.cloud.google.com/apis/library" target="_blank">click here</a>)
 2. Search for and enable each of these APIs:
    - **Google Drive API**
    - **Gmail API**
