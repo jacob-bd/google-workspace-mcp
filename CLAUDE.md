@@ -35,8 +35,8 @@ pytest tests/test_file.py::test_name -v
 g-workspace-mcp --help
 g-workspace-mcp status
 
-# Reinstall after changes
-uv tool install --force .
+# Reinstall after changes (ALWAYS clean cache first to avoid stale code)
+uv cache clean && uv tool install --force .
 ```
 
 ## Architecture

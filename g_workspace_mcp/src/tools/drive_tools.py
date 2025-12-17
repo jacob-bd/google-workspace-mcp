@@ -62,6 +62,57 @@ def _normalize_drive_query(query: str) -> str:
     return f'fullText contains "{escaped_query}"'
 
 
+def _build_file_type_filter(file_type: Optional[str]) -> Optional[str]:
+    """Build mimeType filter clause for Drive API query."""
+    if not file_type:
+        return None
+    mime_type_map = {
+        "document": "application/vnd.google-apps.document",
+        "spreadsheet": "application/vnd.google-apps.spreadsheet",
+        "presentation": "application/vnd.google-apps.presentation",
+        "folder": "application/vnd.google-apps.folder",
+        "pdf": "application/pdf",
+    }
+    if file_type.lower() in mime_type_map:
+        return f"mimeType='{mime_type_map[file_type.lower()]}'"
+    return None
+
+
+def _execute_drive_search(
+    service, query: str, max_results: int, fields: str
+) -> list[Dict[str, Any]]:
+    """Execute a Drive API search with retry on auth errors."""
+    try:
+        results = (
+            service.files()
+            .list(
+                q=query,
+                pageSize=min(max_results, 100),
+                fields=fields,
+                orderBy="modifiedTime desc",
+            )
+            .execute()
+        )
+        return results.get("files", [])
+    except HttpError as e:
+        if e.resp.status in [401, 403]:
+            logger.info("Auth/Quota error, clearing cache and retrying...")
+            get_auth().clear_cache()
+            service = get_auth().get_service("drive", "v3")
+            results = (
+                service.files()
+                .list(
+                    q=query,
+                    pageSize=min(max_results, 100),
+                    fields=fields,
+                    orderBy="modifiedTime desc",
+                )
+                .execute()
+            )
+            return results.get("files", [])
+        raise e
+
+
 def drive_search(
     query: str,
     max_results: int = 10,
@@ -86,61 +137,90 @@ def drive_search(
     """
     try:
         service = get_auth().get_service("drive", "v3")
+        fields = "files(id, name, mimeType, webViewLink, modifiedTime, size)"
 
-        # Normalize query to proper Drive API syntax
-        search_query = _normalize_drive_query(query)
+        # Check if query already has Drive API operators
+        query_lower = query.lower()
+        drive_operators = [
+            " contains ",
+            " = ",
+            " != ",
+            " < ",
+            " > ",
+            " in ",
+            " and ",
+            " or ",
+            "not ",
+        ]
+        has_operators = any(op in query_lower for op in drive_operators)
 
-        # Add file type filter if specified
-        if file_type:
-            mime_type_map = {
-                "document": "application/vnd.google-apps.document",
-                "spreadsheet": "application/vnd.google-apps.spreadsheet",
-                "presentation": "application/vnd.google-apps.presentation",
-                "folder": "application/vnd.google-apps.folder",
-                "pdf": "application/pdf",
+        if has_operators:
+            # Already formatted query - execute as-is
+            search_query = query
+            if file_type:
+                type_filter = _build_file_type_filter(file_type)
+                if type_filter:
+                    search_query = f"{search_query} and {type_filter}"
+
+            files = _execute_drive_search(service, search_query, max_results, fields)
+            logger.info(f"Drive search found {len(files)} files for query: {query}")
+
+            return {
+                "status": "success",
+                "query": query,
+                "file_type": file_type,
+                "count": len(files),
+                "files": files,
             }
-            if file_type.lower() in mime_type_map:
-                search_query = f"{search_query} and mimeType='{mime_type_map[file_type.lower()]}'"
 
-        # Execute search
-        try:
-            results = (
-                service.files()
-                .list(
-                    q=search_query,
-                    pageSize=min(max_results, 100),
-                    fields="files(id, name, mimeType, webViewLink, modifiedTime, size)",
-                    orderBy="modifiedTime desc",
-                )
-                .execute()
-            )
-        except HttpError as e:
-            if e.resp.status in [401, 403]:
-                logger.info("Auth/Quota error, clearing cache and retrying...")
-                get_auth().clear_cache()
-                service = get_auth().get_service("drive", "v3")
-                results = (
-                    service.files()
-                    .list(
-                        q=search_query,
-                        pageSize=min(max_results, 100),
-                        fields="files(id, name, mimeType, webViewLink, modifiedTime, size)",
-                        orderBy="modifiedTime desc",
-                    )
-                    .execute()
-                )
-            else:
-                raise e
+        # Plain text query - search both title and content, prioritize title matches
+        escaped_query = query.replace('"', '\\"')
+        type_filter = _build_file_type_filter(file_type)
 
-        files = results.get("files", [])
-        logger.info(f"Drive search found {len(files)} files for query: {query}")
+        # Build title search query
+        title_query = f'name contains "{escaped_query}"'
+        if type_filter:
+            title_query = f"{title_query} and {type_filter}"
+
+        # Build fullText search query
+        content_query = f'fullText contains "{escaped_query}"'
+        if type_filter:
+            content_query = f"{content_query} and {type_filter}"
+
+        # Execute both searches
+        title_files = _execute_drive_search(service, title_query, max_results, fields)
+        content_files = _execute_drive_search(service, content_query, max_results, fields)
+
+        # Merge results: title matches first, then content-only matches
+        seen_ids = set()
+        merged_files = []
+
+        # Add title matches first (highest priority)
+        for f in title_files:
+            if f["id"] not in seen_ids:
+                seen_ids.add(f["id"])
+                merged_files.append(f)
+
+        # Add content-only matches (not already in title matches)
+        for f in content_files:
+            if f["id"] not in seen_ids:
+                seen_ids.add(f["id"])
+                merged_files.append(f)
+
+        # Limit to max_results
+        merged_files = merged_files[:max_results]
+
+        logger.info(
+            f"Drive search found {len(merged_files)} files for query: {query} "
+            f"(title: {len(title_files)}, content: {len(content_files)})"
+        )
 
         return {
             "status": "success",
             "query": query,
             "file_type": file_type,
-            "count": len(files),
-            "files": files,
+            "count": len(merged_files),
+            "files": merged_files,
         }
 
     except Exception as e:
