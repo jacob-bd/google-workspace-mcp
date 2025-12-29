@@ -489,6 +489,12 @@ uv pip install -e ".[dev]"
 uv run python -m g_workspace_mcp.src.main
 ```
 
+## Vibe Coding Alert
+
+Full transparency: this project was built by a non-developer using AI coding assistants. If you're an experienced Python developer, you might look at this codebase and wince. That's okay.
+
+The goal here was to scratch an itch - read-only access to Google Workspace from AI tools - and learn along the way. The code works, but it's likely missing patterns, optimizations, or elegance that only years of experience can provide.
+
 ## License
 
 MIT
