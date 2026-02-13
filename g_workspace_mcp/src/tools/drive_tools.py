@@ -543,16 +543,34 @@ def drive_list_recursive(
                 if max_files and len(all_files) >= max_files:
                     break
 
-                results = (
-                    service.files()
-                    .list(
-                        q=query,
-                        pageSize=100,
-                        fields="nextPageToken, files(id, name, mimeType, size, shortcutDetails, webViewLink)",
-                        pageToken=page_token,
+                try:
+                    results = (
+                        service.files()
+                        .list(
+                            q=query,
+                            pageSize=100,
+                            fields="nextPageToken, files(id, name, mimeType, size, shortcutDetails, webViewLink)",
+                            pageToken=page_token,
+                        )
+                        .execute()
                     )
-                    .execute()
-                )
+                except HttpError as e:
+                    if e.resp.status in [401, 403]:
+                        logger.info("Auth error during recursive list, clearing cache and retrying...")
+                        get_auth().clear_cache()
+                        service = get_auth().get_service("drive", "v3")
+                        results = (
+                            service.files()
+                            .list(
+                                q=query,
+                                pageSize=100,
+                                fields="nextPageToken, files(id, name, mimeType, size, shortcutDetails, webViewLink)",
+                                pageToken=page_token,
+                            )
+                            .execute()
+                        )
+                    else:
+                        raise
 
                 files = results.get("files", [])
 
