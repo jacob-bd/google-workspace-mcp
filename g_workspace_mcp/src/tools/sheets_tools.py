@@ -40,6 +40,7 @@ def sheets_read(
     Returns:
         Dictionary with status, spreadsheet metadata, and values
     """
+    service = None
     try:
         service = get_auth().get_service("sheets", "v4")
 
@@ -102,17 +103,21 @@ def sheets_read(
         logger.error(f"Sheets read failed: {e}")
 
         # Try to get sheet names to provide a better error message
+        # Guard: service may not be defined if auth failed before assignment
+        sheet_names = []
+        error_msg = str(e)
         try:
-            metadata = service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
-            sheet_names = [
-                s.get("properties", {}).get("title", "Unknown") for s in metadata.get("sheets", [])
-            ]
-            available_sheets = ", ".join(f"'{n}'" for n in sheet_names)
-            error_msg = f"Failed to read range '{range_notation}'. Available sheets: [{available_sheets}]. Error: {e}"
+            if service is not None:
+                metadata = service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
+                sheet_names = [
+                    s.get("properties", {}).get("title", "Unknown")
+                    for s in metadata.get("sheets", [])
+                ]
+                available_sheets = ", ".join(f"'{n}'" for n in sheet_names)
+                error_msg = f"Failed to read range '{range_notation}'. Available sheets: [{available_sheets}]. Error: {e}"
         except Exception:
             # If we can't get metadata, just return the original error
-            error_msg = str(e)
-            sheet_names = []
+            pass
 
         return {
             "status": "error",
