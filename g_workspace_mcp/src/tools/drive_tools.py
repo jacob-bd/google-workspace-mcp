@@ -341,21 +341,21 @@ def drive_get_content(
 
             content_bytes = service.files().export(fileId=file_id, mimeType=export_mime).execute()
             content = (
-                content_bytes.decode("utf-8") if isinstance(content_bytes, bytes) else content_bytes
+                content_bytes.decode("utf-8", errors="replace") if isinstance(content_bytes, bytes) else content_bytes
             )
 
         # Handle Google Sheets
         elif mime_type == "application/vnd.google-apps.spreadsheet":
             content_bytes = service.files().export(fileId=file_id, mimeType="text/csv").execute()
             content = (
-                content_bytes.decode("utf-8") if isinstance(content_bytes, bytes) else content_bytes
+                content_bytes.decode("utf-8", errors="replace") if isinstance(content_bytes, bytes) else content_bytes
             )
 
         # Handle Google Slides
         elif mime_type == "application/vnd.google-apps.presentation":
             content_bytes = service.files().export(fileId=file_id, mimeType="text/plain").execute()
             content = (
-                content_bytes.decode("utf-8") if isinstance(content_bytes, bytes) else content_bytes
+                content_bytes.decode("utf-8", errors="replace") if isinstance(content_bytes, bytes) else content_bytes
             )
 
         # Handle regular files (text, json, etc.)
@@ -368,7 +368,7 @@ def drive_get_content(
             while not done:
                 _, done = downloader.next_chunk()
 
-            content = file_handle.getvalue().decode("utf-8")
+            content = file_handle.getvalue().decode("utf-8", errors="replace")
 
         # Unsupported file types
         else:

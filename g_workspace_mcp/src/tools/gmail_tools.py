@@ -135,13 +135,13 @@ def gmail_get_message(message_id: str) -> Dict[str, Any]:
         def get_body(payload: dict) -> str:
             """Recursively extract body from message payload."""
             if "body" in payload and payload["body"].get("data"):
-                return base64.urlsafe_b64decode(payload["body"]["data"]).decode("utf-8")
+                return base64.urlsafe_b64decode(payload["body"]["data"]).decode("utf-8", errors="replace")
 
             if "parts" in payload:
                 for part in payload["parts"]:
                     if part["mimeType"] == "text/plain":
                         if part.get("body", {}).get("data"):
-                            return base64.urlsafe_b64decode(part["body"]["data"]).decode("utf-8")
+                            return base64.urlsafe_b64decode(part["body"]["data"]).decode("utf-8", errors="replace")
                     elif part["mimeType"] == "multipart/alternative":
                         result = get_body(part)
                         if result:
@@ -151,7 +151,7 @@ def gmail_get_message(message_id: str) -> Dict[str, Any]:
                 for part in payload["parts"]:
                     if part["mimeType"] == "text/html":
                         if part.get("body", {}).get("data"):
-                            return base64.urlsafe_b64decode(part["body"]["data"]).decode("utf-8")
+                            return base64.urlsafe_b64decode(part["body"]["data"]).decode("utf-8", errors="replace")
 
             return ""
 
