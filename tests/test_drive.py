@@ -2,84 +2,47 @@
 Tests for Drive tools.
 
 Tests cover:
-- Query normalization for Drive API syntax
+- drive_search query handling (operator detection, title+content dual search)
+- drive_list pagination
 """
 
 from unittest.mock import MagicMock, patch
 
-from g_workspace_mcp.src.tools.drive_tools import _normalize_drive_query
 
+class TestDriveSearchQueryHandling:
+    """Tests for drive_search operator detection and query building."""
 
-class TestNormalizeDriveQuery:
-    """Tests for _normalize_drive_query function."""
+    @patch("g_workspace_mcp.src.tools.drive_tools.get_auth")
+    def test_plain_text_search_builds_title_and_content_queries(self, mock_get_auth):
+        """Plain text queries should search both title and content."""
+        from g_workspace_mcp.src.tools.drive_tools import drive_search
 
-    def test_plain_text_query_gets_wrapped(self):
-        """Plain text queries should be wrapped in fullText contains."""
-        query = "Better AI role for prompts"
-        result = _normalize_drive_query(query)
-        assert result == 'fullText contains "Better AI role for prompts"'
+        mock_service = MagicMock()
+        mock_get_auth.return_value.get_service.return_value = mock_service
 
-    def test_query_with_contains_operator_unchanged(self):
-        """Queries with 'contains' operator should not be modified."""
-        query = 'name contains "Better AI role"'
-        result = _normalize_drive_query(query)
-        assert result == query
+        mock_service.files.return_value.list.return_value.execute.return_value = {"files": []}
 
-    def test_query_with_equals_operator_unchanged(self):
-        """Queries with '=' operator should not be modified."""
-        query = "mimeType = 'application/vnd.google-apps.document'"
-        result = _normalize_drive_query(query)
-        assert result == query
+        result = drive_search("quarterly report")
 
-    def test_query_with_in_operator_unchanged(self):
-        """Queries with 'in' operator should not be modified."""
-        query = "'root' in parents"
-        result = _normalize_drive_query(query)
-        assert result == query
+        assert result["status"] == "success"
+        # Should have made 2 API calls (title + content)
+        assert mock_service.files.return_value.list.call_count == 2
 
-    def test_query_with_and_operator_unchanged(self):
-        """Queries with 'and' operator should not be modified."""
-        query = "name contains 'test' and trashed = false"
-        result = _normalize_drive_query(query)
-        assert result == query
+    @patch("g_workspace_mcp.src.tools.drive_tools.get_auth")
+    def test_operator_query_passed_through(self, mock_get_auth):
+        """Queries with Drive operators should be passed through as-is."""
+        from g_workspace_mcp.src.tools.drive_tools import drive_search
 
-    def test_query_with_or_operator_unchanged(self):
-        """Queries with 'or' operator should not be modified."""
-        query = "name contains 'test' or name contains 'example'"
-        result = _normalize_drive_query(query)
-        assert result == query
+        mock_service = MagicMock()
+        mock_get_auth.return_value.get_service.return_value = mock_service
 
-    def test_query_with_not_operator_unchanged(self):
-        """Queries with 'not' operator should not be modified."""
-        query = "not trashed = true"
-        result = _normalize_drive_query(query)
-        assert result == query
+        mock_service.files.return_value.list.return_value.execute.return_value = {"files": []}
 
-    def test_empty_string_returns_empty(self):
-        """Empty string should be returned as-is."""
-        assert _normalize_drive_query("") == ""
+        result = drive_search("name contains 'budget'")
 
-    def test_whitespace_only_returns_unchanged(self):
-        """Whitespace-only string should be returned as-is."""
-        assert _normalize_drive_query("   ") == "   "
-
-    def test_query_with_quotes_gets_escaped(self):
-        """Quotes in plain text queries should be escaped."""
-        query = 'document with "quotes"'
-        result = _normalize_drive_query(query)
-        assert result == 'fullText contains "document with \\"quotes\\""'
-
-    def test_single_word_query(self):
-        """Single word queries should be wrapped."""
-        query = "README"
-        result = _normalize_drive_query(query)
-        assert result == 'fullText contains "README"'
-
-    def test_case_insensitive_operator_detection(self):
-        """Operator detection should be case-insensitive."""
-        query = "name CONTAINS 'test'"
-        result = _normalize_drive_query(query)
-        assert result == query
+        assert result["status"] == "success"
+        # Should have made only 1 API call (operator query passed through)
+        assert mock_service.files.return_value.list.call_count == 1
 
 
 class TestDriveListPagination:
@@ -110,8 +73,6 @@ class TestDriveListPagination:
         mock_service = MagicMock()
         mock_get_auth.return_value.get_service.return_value = mock_service
 
-        # First page returns 2 files + nextPageToken
-        # Second page returns 1 file + no token
         mock_service.files.return_value.list.return_value.execute.side_effect = [
             {
                 "files": [{"id": "f1", "name": "file1"}, {"id": "f2", "name": "file2"}],
@@ -126,7 +87,6 @@ class TestDriveListPagination:
 
         assert result["status"] == "success"
         assert result["count"] == 3
-        # Should have made 2 API calls
         assert mock_service.files.return_value.list.return_value.execute.call_count == 2
 
     @patch("g_workspace_mcp.src.tools.drive_tools.get_auth")
@@ -137,7 +97,6 @@ class TestDriveListPagination:
         mock_service = MagicMock()
         mock_get_auth.return_value.get_service.return_value = mock_service
 
-        # First page returns 3 files, which meets max_results=3
         mock_service.files.return_value.list.return_value.execute.return_value = {
             "files": [{"id": f"f{i}", "name": f"file{i}"} for i in range(3)],
             "nextPageToken": "more_data",
@@ -147,5 +106,4 @@ class TestDriveListPagination:
 
         assert result["status"] == "success"
         assert result["count"] == 3
-        # Should only make 1 API call since we already have enough
         assert mock_service.files.return_value.list.return_value.execute.call_count == 1
