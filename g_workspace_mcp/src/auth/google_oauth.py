@@ -36,6 +36,25 @@ TOKEN_FILE = CONFIG_DIR / "token.json"
 CLIENT_SECRET_FILE = CONFIG_DIR / "client_secret.json"
 
 
+def _save_token_secure(token_json: str) -> None:
+    """Save token JSON to TOKEN_FILE with secure permissions.
+
+    Creates CONFIG_DIR with 700 permissions and TOKEN_FILE with 600 permissions.
+    Shared by GoogleWorkspaceAuth._save_token() and run_oauth_flow().
+    """
+    import os
+    import stat
+
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
+
+    token_path = str(TOKEN_FILE)
+    fd = os.open(token_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, stat.S_IRUSR | stat.S_IWUSR)
+    try:
+        os.write(fd, token_json.encode())
+    finally:
+        os.close(fd)
+
+
 class GoogleWorkspaceAuth:
     """
     Manages Google Workspace authentication.
@@ -104,19 +123,7 @@ class GoogleWorkspaceAuth:
 
     def _save_token(self, creds: Credentials) -> None:
         """Save OAuth credentials to token file with secure permissions (600)."""
-        import os
-        import stat
-
-        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-
-        # Write token with 600 permissions (owner read/write only)
-        token_path = str(TOKEN_FILE)
-        fd = os.open(token_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, stat.S_IRUSR | stat.S_IWUSR)
-        try:
-            os.write(fd, creds.to_json().encode())
-        finally:
-            os.close(fd)
-
+        _save_token_secure(creds.to_json())
         logger.info(f"Saved OAuth token to {TOKEN_FILE}")
 
     def get_credentials(self) -> Credentials:
@@ -203,9 +210,6 @@ def run_oauth_flow(client_secret_path: Optional[Path] = None) -> bool:
     Returns:
         True if authentication successful, False otherwise.
     """
-    import os
-    import stat
-
     secret_path = client_secret_path or CLIENT_SECRET_FILE
 
     if not secret_path.exists():
@@ -218,14 +222,8 @@ def run_oauth_flow(client_secret_path: Optional[Path] = None) -> bool:
         # Run local server flow - opens browser automatically
         creds = flow.run_local_server(port=0)
 
-        # Save the token with secure permissions (600 - owner read/write only)
-        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-        token_path = str(TOKEN_FILE)
-        fd = os.open(token_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, stat.S_IRUSR | stat.S_IWUSR)
-        try:
-            os.write(fd, creds.to_json().encode())
-        finally:
-            os.close(fd)
+        # Save the token using shared secure helper
+        _save_token_secure(creds.to_json())
 
         logger.info(f"OAuth authentication successful, token saved to {TOKEN_FILE}")
         return True

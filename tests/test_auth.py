@@ -245,6 +245,27 @@ class TestTokenFilePermissions:
                     permissions = stat.S_IMODE(file_stat.st_mode)
                     assert permissions == 0o600
 
+    def test_save_token_creates_config_dir_with_700_permissions(self):
+        """Config directory should be created with 700 permissions (owner only)."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_dir = Path(tmpdir) / "g-workspace-mcp"
+            token_path = config_dir / "token.json"
+
+            with patch("g_workspace_mcp.src.auth.google_oauth.TOKEN_FILE", token_path):
+                with patch("g_workspace_mcp.src.auth.google_oauth.CONFIG_DIR", config_dir):
+                    auth = GoogleWorkspaceAuth()
+
+                    mock_creds = MagicMock()
+                    mock_creds.to_json.return_value = '{"token": "test"}'
+
+                    auth._save_token(mock_creds)
+
+                    # Verify directory was created with 700 permissions
+                    assert config_dir.exists()
+                    dir_stat = os.stat(config_dir)
+                    dir_permissions = stat.S_IMODE(dir_stat.st_mode)
+                    assert dir_permissions == 0o700
+
 
 class TestOAuthFlow:
     """Tests for OAuth flow function."""
