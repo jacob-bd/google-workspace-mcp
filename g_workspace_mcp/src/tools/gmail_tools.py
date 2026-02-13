@@ -8,7 +8,7 @@ Provides:
 """
 
 import base64
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from g_workspace_mcp.src.auth.google_oauth import get_auth
 from g_workspace_mcp.utils.pylogger import get_python_logger
@@ -126,18 +126,20 @@ def gmail_search(
         }
 
 
-def gmail_get_message(message_id: str) -> Dict[str, Any]:
+def gmail_get_message(message_id: str, max_length: Optional[int] = None) -> Dict[str, Any]:
     """
     Get full content of an email message.
 
     TOOL_NAME=gmail_get_message
     DISPLAY_NAME=Gmail Get Message
     USECASE=Get full email content by message ID
-    INPUT_DESCRIPTION=message_id (string from gmail_search)
+    INPUT_DESCRIPTION=message_id (string from gmail_search), max_length (optional int to truncate body)
     OUTPUT_DESCRIPTION=Full email with subject, from, to, cc, date, body, labels
 
     Args:
         message_id: The ID of the message to retrieve
+        max_length: Optional maximum body length in characters. If body exceeds
+                   this length, it will be truncated with a notice appended.
 
     Returns:
         Dictionary with status and full email content
@@ -190,6 +192,18 @@ def gmail_get_message(message_id: str) -> Dict[str, Any]:
 
         body = get_body(message.get("payload", {}))
 
+        # Apply truncation if max_length specified
+        body_length = len(body) if body else 0
+        truncated = False
+        if max_length and body and len(body) > max_length:
+            body = (
+                body[:max_length]
+                + "\n\n... [body truncated - original length: {:,} characters, showing first {:,}]".format(
+                    body_length, max_length
+                )
+            )
+            truncated = True
+
         logger.info(f"Retrieved message: {message_id}")
 
         return {
@@ -202,6 +216,8 @@ def gmail_get_message(message_id: str) -> Dict[str, Any]:
             "cc": headers.get("Cc", ""),
             "date": headers.get("Date", ""),
             "body": body,
+            "body_length": body_length,
+            "body_truncated": truncated,
             "labels": message.get("labelIds", []),
         }
 

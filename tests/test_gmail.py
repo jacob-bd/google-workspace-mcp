@@ -229,6 +229,73 @@ class TestGmailGetMessage:
         assert result["from"] == "test@test.com"
 
 
+class TestGmailGetMessageTruncation:
+    """Tests for gmail_get_message body truncation."""
+
+    def _b64(self, text):
+        import base64
+        return base64.urlsafe_b64encode(text.encode("utf-8")).decode("ascii")
+
+    @patch("g_workspace_mcp.src.tools.gmail_tools.get_auth")
+    def test_max_length_truncates_body(self, mock_get_auth):
+        """Body exceeding max_length should be truncated with notice."""
+        mock_service = MagicMock()
+        mock_get_auth.return_value.get_service.return_value = mock_service
+
+        long_body = "x" * 5000
+        mock_service.users.return_value.messages.return_value.get.return_value.execute.return_value = {
+            "id": "msg1", "threadId": "t1",
+            "payload": {"headers": [], "body": {"data": self._b64(long_body)}},
+            "labelIds": [],
+        }
+
+        result = gmail_get_message("msg1", max_length=100)
+
+        assert result["status"] == "success"
+        assert result["body_truncated"] is True
+        assert result["body_length"] == 5000
+        assert len(result["body"]) < 5000
+        assert "truncated" in result["body"]
+
+    @patch("g_workspace_mcp.src.tools.gmail_tools.get_auth")
+    def test_no_truncation_when_under_max_length(self, mock_get_auth):
+        """Body under max_length should not be truncated."""
+        mock_service = MagicMock()
+        mock_get_auth.return_value.get_service.return_value = mock_service
+
+        short_body = "Short email"
+        mock_service.users.return_value.messages.return_value.get.return_value.execute.return_value = {
+            "id": "msg1", "threadId": "t1",
+            "payload": {"headers": [], "body": {"data": self._b64(short_body)}},
+            "labelIds": [],
+        }
+
+        result = gmail_get_message("msg1", max_length=1000)
+
+        assert result["status"] == "success"
+        assert result["body_truncated"] is False
+        assert result["body"] == short_body
+
+    @patch("g_workspace_mcp.src.tools.gmail_tools.get_auth")
+    def test_no_max_length_returns_full_body(self, mock_get_auth):
+        """Without max_length, full body should be returned."""
+        mock_service = MagicMock()
+        mock_get_auth.return_value.get_service.return_value = mock_service
+
+        long_body = "y" * 10000
+        mock_service.users.return_value.messages.return_value.get.return_value.execute.return_value = {
+            "id": "msg1", "threadId": "t1",
+            "payload": {"headers": [], "body": {"data": self._b64(long_body)}},
+            "labelIds": [],
+        }
+
+        result = gmail_get_message("msg1")
+
+        assert result["status"] == "success"
+        assert result["body_truncated"] is False
+        assert result["body"] == long_body
+
+
 class TestGmailMimeTraversal:
     """Tests for MIME body extraction in gmail_get_message."""
 
