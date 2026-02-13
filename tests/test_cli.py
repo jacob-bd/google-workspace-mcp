@@ -187,8 +187,9 @@ class TestConfigCommand:
         import json
 
         config = json.loads(result.output)
-        assert "command" in config
-        assert "args" in config
+        assert "google-workspace" in config
+        assert "command" in config["google-workspace"]
+        assert "args" in config["google-workspace"]
 
 
 class TestHelperFunctions:
