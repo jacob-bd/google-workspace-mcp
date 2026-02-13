@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-MCP server providing **read-only** access to Google Workspace (Drive, Gmail, Calendar, Sheets). Uses Application Default Credentials (ADC) via `gcloud auth application-default login` - no GCP project or credentials.json needed.
+MCP server providing **read-only** access to Google Workspace (Drive, Gmail, Calendar, Sheets). Supports two auth methods: OAuth (browser sign-in, tokens stored locally) and ADC via `gcloud auth application-default login`.
 
 ## Development Commands
 
@@ -20,7 +20,6 @@ ruff check .
 
 # Run formatting
 ruff format .
-black .
 
 # Type checking
 mypy g_workspace_mcp
@@ -55,8 +54,9 @@ g_workspace_mcp/
 ```
 
 **Key classes:**
-- `GoogleWorkspaceAuth` (google_oauth.py:30): Manages ADC credentials and service caching
-- `WorkspaceMCPServer` (mcp.py:19): Registers tools with FastMCP
+- `GoogleWorkspaceAuth` (google_oauth.py): Manages OAuth/ADC credentials and service caching
+- `WorkspaceMCPServer` (mcp.py): Registers tools with FastMCP
+- `_save_token_secure` (google_oauth.py): Shared helper for secure token file writing
 
 ## Adding New Tools
 
@@ -82,7 +82,7 @@ def tool_name(...) -> Dict[str, Any]:
 
 - **Read-only scopes only** (`*.readonly`) for safety
 - **No HTTP server** - stdio mode for MCP
-- **ADC authentication** - users run `gcloud auth application-default login` once
+- **Dual auth** - OAuth (browser) or ADC (`gcloud auth application-default login`)
 - **Global auth singleton** - `get_auth()` returns cached `GoogleWorkspaceAuth` instance
 - **Minimal dependencies** - no FastAPI, no pydantic-settings, no dotenv
 

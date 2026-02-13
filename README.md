@@ -44,16 +44,8 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 ### 2. Install the MCP Server
 
-**Clone from GitHub:**
 ```bash
 git clone https://github.com/jacob-bd/google-workspace-mcp.git
-cd google-workspace-mcp
-uv tool install .
-```
-
-**Or clone from GitLab:**
-```bash
-git clone https://gitlab.com/jbendavi/google-workspace-mcp.git
 cd google-workspace-mcp
 uv tool install .
 ```
@@ -272,6 +264,7 @@ g-workspace-mcp run
 |------|-------------|
 | `drive_search` | Search files by query with optional type filter |
 | `drive_list` | List files in a folder |
+| `drive_list_recursive` | Recursively list all files in a folder tree with sizes |
 | `drive_get_content` | Get file content (Docs, Sheets, text files) |
 
 ### Gmail Tools
@@ -433,7 +426,7 @@ Add this to your IDE's MCP configuration file (consult your IDE's documentation 
 
 This MCP does **not** collect, store, or transmit any user data:
 
-- **No data logging** - Operational logs contain only metadata (counts, IDs), never content
+- **No data logging** - Operational logs (sent to stderr, never stdout) contain only metadata (counts, IDs), never email or file content
 - **No data storage** - Your emails, files, and calendar events are never written to disk
 - **No telemetry** - Zero analytics, tracking, or usage reporting
 - **Direct data flow** - Data flows directly from Google APIs to your AI tool
