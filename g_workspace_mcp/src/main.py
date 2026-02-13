@@ -18,12 +18,22 @@ def main() -> None:
 
     Claude Code will spawn this process and communicate via stdin/stdout.
     """
+    import sys
+
     logger.info("Starting Google Workspace MCP Server (stdio mode)")
 
-    server = WorkspaceMCPServer()
-
-    # Run in stdio mode - FastMCP handles the protocol
-    server.mcp.run()
+    try:
+        server = WorkspaceMCPServer()
+        # Run in stdio mode - FastMCP handles the protocol
+        server.mcp.run()
+    except KeyboardInterrupt:
+        logger.info("Server stopped by user")
+    except BrokenPipeError:
+        # Parent process disconnected - normal during shutdown
+        logger.info("Client disconnected")
+    except Exception as e:
+        logger.error(f"Server failed: {e}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
