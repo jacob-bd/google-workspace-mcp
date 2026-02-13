@@ -2,7 +2,7 @@
 
 import logging
 import sys
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, Set
 
 import structlog
 
@@ -72,12 +72,6 @@ def _configure_third_party_loggers(log_level: str) -> None:
 # --- Public API ---
 
 
-def force_reconfigure_all_loggers(log_level: str = "INFO") -> None:
-    """Force logger reconfiguration, even if already initialized."""
-    global _LOGGING_CONFIGURED
-    _LOGGING_CONFIGURED = False
-    get_python_logger(log_level)
-
 
 def get_python_logger(log_level: str = "INFO") -> structlog.BoundLogger:
     """Get a configured structlog logger."""
@@ -115,58 +109,3 @@ def get_python_logger(log_level: str = "INFO") -> structlog.BoundLogger:
     return structlog.get_logger()
 
 
-def get_uvicorn_log_config(log_level: str = "INFO") -> Dict[str, Any]:
-    """Return a Uvicorn-compatible logging config that integrates with structlog."""
-    log_level = log_level.upper()
-    default_formatter = {
-        "()": "structlog.stdlib.ProcessorFormatter",
-        "processor": structlog.processors.JSONRenderer(),
-        "foreign_pre_chain": [
-            structlog.stdlib.add_log_level,
-            structlog.processors.TimeStamper(fmt="iso"),
-            structlog.processors.StackInfoRenderer(),
-            structlog.processors.format_exc_info,
-            structlog.processors.UnicodeDecoder(),
-        ],
-    }
-
-    def make_logger_config(names: List[str], level: str) -> Dict[str, Any]:
-        return {
-            name: {
-                "handlers": ["default"],
-                "level": level,
-                "propagate": False,
-            }
-            for name in names
-        }
-
-    # Base uvicorn loggers
-    base_loggers = ["", "uvicorn", "uvicorn.error", "uvicorn.asgi", "uvicorn.protocols"]
-    access_loggers = ["uvicorn.access"]
-
-    return {
-        "version": 1,
-        "disable_existing_loggers": False,
-        "formatters": {
-            "default": default_formatter,
-            "access": default_formatter,
-        },
-        "handlers": {
-            "default": {
-                "formatter": "default",
-                "class": "logging.StreamHandler",
-                "stream": "ext://sys.stdout",
-            },
-            "access": {
-                "formatter": "access",
-                "class": "logging.StreamHandler",
-                "stream": "ext://sys.stdout",
-            },
-        },
-        "loggers": {
-            **make_logger_config(base_loggers, log_level),
-            **make_logger_config(access_loggers, log_level),
-            **make_logger_config(list(THIRD_PARTY_LOGGERS - ERROR_ONLY_LOGGERS), log_level),
-            **make_logger_config(list(ERROR_ONLY_LOGGERS), "ERROR"),
-        },
-    }

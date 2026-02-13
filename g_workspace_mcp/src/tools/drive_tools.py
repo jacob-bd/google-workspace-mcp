@@ -8,6 +8,7 @@ Provides:
 """
 
 import io
+from collections import deque
 from typing import Any, Dict, Literal, Optional
 
 from googleapiclient.errors import HttpError
@@ -479,7 +480,7 @@ def drive_list_recursive(
         max_depth = min(max(1, max_depth), 10)
 
         all_files: list[Dict[str, Any]] = []
-        folders_to_process = [(folder_id, "", 0)]  # (folder_id, path, depth)
+        folders_to_process = deque([(folder_id, "", 0)])  # (folder_id, path, depth)
         total_size_bytes = 0
         shortcuts_resolved = 0
         shortcuts_failed = 0
@@ -488,7 +489,7 @@ def drive_list_recursive(
             if max_files and len(all_files) >= max_files:
                 break
 
-            current_folder_id, current_path, current_depth = folders_to_process.pop(0)
+            current_folder_id, current_path, current_depth = folders_to_process.popleft()
 
             # Build query
             query = f"'{current_folder_id}' in parents"

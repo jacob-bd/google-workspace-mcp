@@ -10,10 +10,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
-try:
-    from zoneinfo import ZoneInfo
-except ImportError:
-    from backports.zoneinfo import ZoneInfo  # Python < 3.9
+from zoneinfo import ZoneInfo
 
 from g_workspace_mcp.src.auth.google_oauth import get_auth
 from g_workspace_mcp.utils.pylogger import get_python_logger

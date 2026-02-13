@@ -29,7 +29,7 @@ class WorkspaceMCPServer:
 
     Usage:
         server = WorkspaceMCPServer()
-        app = server.mcp.http_app()  # For FastAPI mounting
+        server.mcp.run()  # Runs in stdio mode
     """
 
     def __init__(self, name: str = "google-workspace"):
@@ -64,4 +64,5 @@ class WorkspaceMCPServer:
         # Sheets tools
         self.mcp.tool()(sheets_read)
 
-        logger.info("Registered 10 Google Workspace MCP tools")
+        tool_count = len(self.mcp._tool_manager._tools)
+        logger.info(f"Registered {tool_count} Google Workspace MCP tools")

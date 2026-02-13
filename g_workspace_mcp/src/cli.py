@@ -29,8 +29,18 @@ from g_workspace_mcp.src.auth.google_oauth import (
 console = Console()
 
 
+def _get_version() -> str:
+    """Get package version from metadata, with fallback."""
+    try:
+        from importlib.metadata import version
+
+        return version("g-workspace-mcp")
+    except Exception:
+        return "0.1.0"
+
+
 @click.group()
-@click.version_option(version="0.1.0")
+@click.version_option(version=_get_version())
 def main():
     """Google Workspace MCP Server CLI."""
     pass
