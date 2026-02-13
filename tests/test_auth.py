@@ -122,6 +122,42 @@ class TestGoogleWorkspaceAuth:
 
         assert result is None
 
+    @patch("g_workspace_mcp.src.auth.google_oauth.Request")
+    @patch("g_workspace_mcp.src.auth.google_oauth.google.auth.default")
+    def test_load_adc_credentials_refresh_error_returns_none(self, mock_auth_default, mock_request):
+        """Should return None when ADC credential refresh fails with RefreshError."""
+        import google.auth.exceptions
+
+        mock_creds = MagicMock()
+        mock_creds.expired = True
+        mock_creds.refresh.side_effect = google.auth.exceptions.RefreshError("refresh failed")
+        mock_auth_default.return_value = (mock_creds, "project-id")
+
+        auth = GoogleWorkspaceAuth()
+        result = auth._load_adc_credentials()
+
+        assert result is None
+        mock_creds.refresh.assert_called_once()
+
+    @patch("g_workspace_mcp.src.auth.google_oauth.Request")
+    @patch("g_workspace_mcp.src.auth.google_oauth.google.auth.default")
+    def test_load_adc_credentials_transport_error_returns_none(
+        self, mock_auth_default, mock_request
+    ):
+        """Should return None when ADC credential refresh fails with TransportError."""
+        import google.auth.exceptions
+
+        mock_creds = MagicMock()
+        mock_creds.expired = True
+        mock_creds.refresh.side_effect = google.auth.exceptions.TransportError("network timeout")
+        mock_auth_default.return_value = (mock_creds, "project-id")
+
+        auth = GoogleWorkspaceAuth()
+        result = auth._load_adc_credentials()
+
+        assert result is None
+        mock_creds.refresh.assert_called_once()
+
     def test_get_credentials_tries_oauth_first(self):
         """get_credentials should try OAuth before ADC."""
         auth = GoogleWorkspaceAuth()

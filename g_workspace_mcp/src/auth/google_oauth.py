@@ -90,8 +90,12 @@ class GoogleWorkspaceAuth:
 
             # Refresh if expired
             if creds.expired:
-                creds.refresh(Request())
-                logger.info("Refreshed ADC credentials")
+                try:
+                    creds.refresh(Request())
+                    logger.info("Refreshed ADC credentials")
+                except (google.auth.exceptions.RefreshError, google.auth.exceptions.TransportError) as e:
+                    logger.warning(f"ADC credential refresh failed: {e}")
+                    return None
 
             return creds
 
