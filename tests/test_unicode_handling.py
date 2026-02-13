@@ -156,3 +156,57 @@ class TestDriveUnicodeHandling:
 
         assert result["status"] == "success"
         assert result["content"] == doc_content
+
+
+class TestDriveFileSizeGuard:
+    """Tests for file size check before download."""
+
+    @patch("g_workspace_mcp.src.tools.drive_tools.get_auth")
+    def test_large_file_rejected_before_download(self, mock_get_auth):
+        """Files exceeding 10 MB should be rejected without downloading."""
+        mock_service = MagicMock()
+        mock_get_auth.return_value.get_service.return_value = mock_service
+
+        mock_service.files.return_value.get.return_value.execute.return_value = {
+            "id": "big1",
+            "name": "huge.json",
+            "mimeType": "application/json",
+            "size": str(50 * 1024 * 1024),  # 50 MB
+        }
+
+        result = drive_get_content("big1")
+
+        assert result["status"] == "success"
+        assert result["content"] is None
+        assert "too large" in result["message"]
+        # Should NOT have attempted to download
+        mock_service.files.return_value.get_media.assert_not_called()
+
+    @patch("g_workspace_mcp.src.tools.drive_tools.MediaIoBaseDownload")
+    @patch("g_workspace_mcp.src.tools.drive_tools.get_auth")
+    def test_small_file_allowed_to_download(self, mock_get_auth, mock_downloader_class):
+        """Files under 10 MB should proceed to download normally."""
+        mock_service = MagicMock()
+        mock_get_auth.return_value.get_service.return_value = mock_service
+
+        mock_service.files.return_value.get.return_value.execute.return_value = {
+            "id": "small1",
+            "name": "small.txt",
+            "mimeType": "text/plain",
+            "size": str(1024),  # 1 KB
+        }
+
+        mock_downloader = MagicMock()
+        mock_downloader.next_chunk.return_value = (None, True)
+        mock_downloader_class.return_value = mock_downloader
+
+        import io
+        with patch("g_workspace_mcp.src.tools.drive_tools.io.BytesIO") as mock_bytesio:
+            mock_buffer = io.BytesIO(b"small content")
+            mock_bytesio.return_value = mock_buffer
+            mock_buffer.getvalue = lambda: b"small content"
+
+            result = drive_get_content("small1")
+
+        assert result["status"] == "success"
+        assert result["content"] == "small content"

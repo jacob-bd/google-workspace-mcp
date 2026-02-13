@@ -340,6 +340,25 @@ def drive_get_content(
         mime_type = file_meta.get("mimeType", "")
         file_name = file_meta.get("name", "Unknown")
 
+        # Guard against downloading very large files into memory
+        MAX_DOWNLOAD_SIZE = 10 * 1024 * 1024  # 10 MB
+        file_size_str = file_meta.get("size")
+        if file_size_str:
+            file_size = int(file_size_str)
+            if file_size > MAX_DOWNLOAD_SIZE:
+                size_mb = round(file_size / (1024 * 1024), 1)
+                logger.warning(f"File too large for content extraction: {file_name} ({size_mb} MB)")
+                return {
+                    "status": "success",
+                    "file_id": file_id,
+                    "file_name": file_name,
+                    "mime_type": mime_type,
+                    "content": None,
+                    "content_length": 0,
+                    "truncated": False,
+                    "message": f"File is too large ({size_mb} MB) for content extraction. Max is {MAX_DOWNLOAD_SIZE // (1024*1024)} MB. Use webViewLink to view.",
+                }
+
         content = None
 
         # Handle Google Docs
