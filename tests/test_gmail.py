@@ -229,6 +229,141 @@ class TestGmailGetMessage:
         assert result["from"] == "test@test.com"
 
 
+class TestGmailMimeTraversal:
+    """Tests for MIME body extraction in gmail_get_message."""
+
+    def _make_message_response(self, payload):
+        """Helper to wrap a payload in a standard message response."""
+        return {
+            "id": "msg1",
+            "threadId": "t1",
+            "payload": {
+                "headers": [{"name": "Subject", "value": "Test"}],
+                **payload,
+            },
+            "labelIds": [],
+        }
+
+    def _b64(self, text):
+        """Helper to base64url-encode a string."""
+        import base64
+        return base64.urlsafe_b64encode(text.encode("utf-8")).decode("ascii")
+
+    @patch("g_workspace_mcp.src.tools.gmail_tools.get_auth")
+    def test_multipart_mixed_with_nested_alternative(self, mock_get_auth):
+        """Should find text/plain inside multipart/mixed > multipart/alternative."""
+        mock_service = MagicMock()
+        mock_get_auth.return_value.get_service.return_value = mock_service
+
+        # Structure: multipart/mixed > [multipart/alternative > [text/plain, text/html], attachment]
+        mock_service.users.return_value.messages.return_value.get.return_value.execute.return_value = self._make_message_response({
+            "mimeType": "multipart/mixed",
+            "parts": [
+                {
+                    "mimeType": "multipart/alternative",
+                    "parts": [
+                        {"mimeType": "text/plain", "body": {"data": self._b64("Plain text body")}},
+                        {"mimeType": "text/html", "body": {"data": self._b64("<p>HTML body</p>")}},
+                    ],
+                },
+                {"mimeType": "application/pdf", "body": {"size": 12345}},
+            ],
+        })
+
+        result = gmail_get_message("msg1")
+        assert result["status"] == "success"
+        assert result["body"] == "Plain text body"
+
+    @patch("g_workspace_mcp.src.tools.gmail_tools.get_auth")
+    def test_multipart_related_with_text(self, mock_get_auth):
+        """Should find text inside multipart/related (inline images)."""
+        mock_service = MagicMock()
+        mock_get_auth.return_value.get_service.return_value = mock_service
+
+        # Structure: multipart/related > [multipart/alternative > [text/plain, text/html], image]
+        mock_service.users.return_value.messages.return_value.get.return_value.execute.return_value = self._make_message_response({
+            "mimeType": "multipart/related",
+            "parts": [
+                {
+                    "mimeType": "multipart/alternative",
+                    "parts": [
+                        {"mimeType": "text/plain", "body": {"data": self._b64("Related body")}},
+                        {"mimeType": "text/html", "body": {"data": self._b64("<p>HTML</p>")}},
+                    ],
+                },
+                {"mimeType": "image/png", "body": {"size": 5000}},
+            ],
+        })
+
+        result = gmail_get_message("msg1")
+        assert result["status"] == "success"
+        assert result["body"] == "Related body"
+
+    @patch("g_workspace_mcp.src.tools.gmail_tools.get_auth")
+    def test_deeply_nested_multipart(self, mock_get_auth):
+        """Should find text in deeply nested: mixed > related > alternative > text/plain."""
+        mock_service = MagicMock()
+        mock_get_auth.return_value.get_service.return_value = mock_service
+
+        mock_service.users.return_value.messages.return_value.get.return_value.execute.return_value = self._make_message_response({
+            "mimeType": "multipart/mixed",
+            "parts": [
+                {
+                    "mimeType": "multipart/related",
+                    "parts": [
+                        {
+                            "mimeType": "multipart/alternative",
+                            "parts": [
+                                {"mimeType": "text/plain", "body": {"data": self._b64("Deep body")}},
+                                {"mimeType": "text/html", "body": {"data": self._b64("<b>Deep</b>")}},
+                            ],
+                        },
+                    ],
+                },
+            ],
+        })
+
+        result = gmail_get_message("msg1")
+        assert result["status"] == "success"
+        assert result["body"] == "Deep body"
+
+    @patch("g_workspace_mcp.src.tools.gmail_tools.get_auth")
+    def test_html_fallback_when_no_plain_text(self, mock_get_auth):
+        """Should fall back to HTML when no text/plain part exists."""
+        mock_service = MagicMock()
+        mock_get_auth.return_value.get_service.return_value = mock_service
+
+        mock_service.users.return_value.messages.return_value.get.return_value.execute.return_value = self._make_message_response({
+            "mimeType": "multipart/mixed",
+            "parts": [
+                {"mimeType": "text/html", "body": {"data": self._b64("<p>Only HTML</p>")}},
+                {"mimeType": "application/pdf", "body": {"size": 999}},
+            ],
+        })
+
+        result = gmail_get_message("msg1")
+        assert result["status"] == "success"
+        assert result["body"] == "<p>Only HTML</p>"
+
+    @patch("g_workspace_mcp.src.tools.gmail_tools.get_auth")
+    def test_empty_body_when_no_text_parts(self, mock_get_auth):
+        """Should return empty string when no text parts exist at all."""
+        mock_service = MagicMock()
+        mock_get_auth.return_value.get_service.return_value = mock_service
+
+        mock_service.users.return_value.messages.return_value.get.return_value.execute.return_value = self._make_message_response({
+            "mimeType": "multipart/mixed",
+            "parts": [
+                {"mimeType": "application/pdf", "body": {"size": 999}},
+                {"mimeType": "image/jpeg", "body": {"size": 500}},
+            ],
+        })
+
+        result = gmail_get_message("msg1")
+        assert result["status"] == "success"
+        assert result["body"] == ""
+
+
 class TestGmailListLabels:
     """Tests for gmail_list_labels."""
 

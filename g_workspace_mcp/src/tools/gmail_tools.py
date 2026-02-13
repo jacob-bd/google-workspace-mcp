@@ -154,23 +154,35 @@ def gmail_get_message(message_id: str) -> Dict[str, Any]:
 
         # Extract body
         def get_body(payload: dict) -> str:
-            """Recursively extract body from message payload."""
+            """Recursively extract body from message payload.
+
+            Handles nested MIME structures including:
+            - Direct body data
+            - multipart/alternative (plain text vs HTML)
+            - multipart/mixed (attachments alongside body)
+            - multipart/related (inline images alongside body)
+            """
+            # Direct body data (single-part messages)
             if "body" in payload and payload["body"].get("data"):
                 return base64.urlsafe_b64decode(payload["body"]["data"]).decode("utf-8", errors="replace")
 
             if "parts" in payload:
+                # First pass: look for plain text (preferred)
                 for part in payload["parts"]:
-                    if part["mimeType"] == "text/plain":
+                    mime = part.get("mimeType", "")
+                    if mime == "text/plain":
                         if part.get("body", {}).get("data"):
                             return base64.urlsafe_b64decode(part["body"]["data"]).decode("utf-8", errors="replace")
-                    elif part["mimeType"] == "multipart/alternative":
+                    elif mime.startswith("multipart/"):
+                        # Recurse into any multipart container (alternative, mixed, related, etc.)
                         result = get_body(part)
                         if result:
                             return result
 
-                # If no plain text, try HTML
+                # Second pass: fall back to HTML if no plain text found
                 for part in payload["parts"]:
-                    if part["mimeType"] == "text/html":
+                    mime = part.get("mimeType", "")
+                    if mime == "text/html":
                         if part.get("body", {}).get("data"):
                             return base64.urlsafe_b64decode(part["body"]["data"]).decode("utf-8", errors="replace")
 
