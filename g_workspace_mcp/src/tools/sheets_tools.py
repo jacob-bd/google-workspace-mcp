@@ -49,22 +49,19 @@ def sheets_read(
 
         title = spreadsheet.get("properties", {}).get("title", "Untitled")
 
-        # If no range specified, use first sheet with full range
+        # If no range specified, use full first sheet (no cell range limit)
         if not range_notation:
             sheets = spreadsheet.get("sheets", [])
             if sheets:
                 first_sheet_name = sheets[0].get("properties", {}).get("title", "Sheet1")
-                range_notation = f"'{first_sheet_name}'!A1:Z1000"
+                range_notation = f"'{first_sheet_name}'"
             else:
-                range_notation = "A1:Z1000"
-        # If only sheet name provided (no "!"), append default range
+                range_notation = "Sheet1"
+        # If only sheet name provided (no "!"), quote it if needed
         elif "!" not in range_notation:
-            # Quote sheet name if it contains spaces and append range
             sheet_name = range_notation
             if " " in sheet_name and not sheet_name.startswith("'"):
-                range_notation = f"'{sheet_name}'!A1:Z1000"
-            else:
-                range_notation = f"{sheet_name}!A1:Z1000"
+                range_notation = f"'{sheet_name}'"
 
         # Get values
         result = (

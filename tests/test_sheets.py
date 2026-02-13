@@ -89,8 +89,8 @@ class TestSheetsReadSuccess:
         assert len(result["values"]) == 50
 
     @patch("g_workspace_mcp.src.tools.sheets_tools.get_auth")
-    def test_default_range_uses_first_sheet(self, mock_get_auth):
-        """When no range specified, should use first sheet name."""
+    def test_default_range_uses_full_sheet_not_a1_z1000(self, mock_get_auth):
+        """When no range specified, should use just the sheet name (no A1:Z1000 limit)."""
         mock_service = MagicMock()
         mock_get_auth.return_value.get_service.return_value = mock_service
 
@@ -101,13 +101,64 @@ class TestSheetsReadSuccess:
 
         mock_service.spreadsheets.return_value.values.return_value.get.return_value.execute.return_value = {
             "values": [["a", "b"], ["c", "d"]],
-            "range": "'Custom Name'!A1:Z1000",
+            "range": "'Custom Name'",
             "majorDimension": "ROWS",
         }
 
         result = sheets_read("fake-id")
 
         assert result["status"] == "success"
-        # Verify the range was constructed with the actual sheet name
+        # Verify the range is just the sheet name, not A1:Z1000
         call_kwargs = mock_service.spreadsheets.return_value.values.return_value.get.call_args
-        assert "Custom Name" in call_kwargs.kwargs.get("range", call_kwargs[1].get("range", ""))
+        used_range = call_kwargs.kwargs.get("range", call_kwargs[1].get("range", ""))
+        assert "Custom Name" in used_range
+        assert "A1:Z1000" not in used_range
+
+    @patch("g_workspace_mcp.src.tools.sheets_tools.get_auth")
+    def test_sheet_name_only_does_not_append_cell_range(self, mock_get_auth):
+        """When only sheet name given (no !), should not append A1:Z1000."""
+        mock_service = MagicMock()
+        mock_get_auth.return_value.get_service.return_value = mock_service
+
+        mock_service.spreadsheets.return_value.get.return_value.execute.return_value = {
+            "properties": {"title": "Test"},
+            "sheets": [{"properties": {"title": "Data"}}],
+        }
+
+        mock_service.spreadsheets.return_value.values.return_value.get.return_value.execute.return_value = {
+            "values": [["x"]],
+            "range": "Data",
+            "majorDimension": "ROWS",
+        }
+
+        result = sheets_read("fake-id", range_notation="Data")
+
+        assert result["status"] == "success"
+        call_kwargs = mock_service.spreadsheets.return_value.values.return_value.get.call_args
+        used_range = call_kwargs.kwargs.get("range", call_kwargs[1].get("range", ""))
+        assert used_range == "Data"
+        assert "A1:Z1000" not in used_range
+
+    @patch("g_workspace_mcp.src.tools.sheets_tools.get_auth")
+    def test_explicit_range_passed_through_unchanged(self, mock_get_auth):
+        """When explicit A1 notation with ! is given, it should be used as-is."""
+        mock_service = MagicMock()
+        mock_get_auth.return_value.get_service.return_value = mock_service
+
+        mock_service.spreadsheets.return_value.get.return_value.execute.return_value = {
+            "properties": {"title": "Test"},
+            "sheets": [{"properties": {"title": "Sheet1"}}],
+        }
+
+        mock_service.spreadsheets.return_value.values.return_value.get.return_value.execute.return_value = {
+            "values": [["a"]],
+            "range": "Sheet1!A1:ZZ5000",
+            "majorDimension": "ROWS",
+        }
+
+        result = sheets_read("fake-id", range_notation="Sheet1!A1:ZZ5000")
+
+        assert result["status"] == "success"
+        call_kwargs = mock_service.spreadsheets.return_value.values.return_value.get.call_args
+        used_range = call_kwargs.kwargs.get("range", call_kwargs[1].get("range", ""))
+        assert used_range == "Sheet1!A1:ZZ5000"
