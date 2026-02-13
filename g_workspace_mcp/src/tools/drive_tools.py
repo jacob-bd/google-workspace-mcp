@@ -261,25 +261,36 @@ def drive_list(
         if not include_trashed:
             query += " and trashed=false"
 
-        results = (
-            service.files()
-            .list(
-                q=query,
-                pageSize=min(max_results, 100),
-                fields="files(id, name, mimeType, webViewLink, modifiedTime, size, shortcutDetails)",
-                orderBy="name",
-            )
-            .execute()
-        )
+        fields = "nextPageToken, files(id, name, mimeType, webViewLink, modifiedTime, size, shortcutDetails)"
+        all_files: list[Dict[str, Any]] = []
+        page_token = None
 
-        files = results.get("files", [])
-        logger.info(f"Listed {len(files)} files in folder: {folder_id}")
+        while len(all_files) < max_results:
+            page_size = min(max_results - len(all_files), 100)
+            results = (
+                service.files()
+                .list(
+                    q=query,
+                    pageSize=page_size,
+                    fields=fields,
+                    orderBy="name",
+                    pageToken=page_token,
+                )
+                .execute()
+            )
+
+            all_files.extend(results.get("files", []))
+            page_token = results.get("nextPageToken")
+            if not page_token:
+                break
+
+        logger.info(f"Listed {len(all_files)} files in folder: {folder_id}")
 
         return {
             "status": "success",
             "folder_id": folder_id,
-            "count": len(files),
-            "files": files,
+            "count": len(all_files),
+            "files": all_files,
         }
 
     except Exception as e:

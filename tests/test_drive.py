@@ -5,6 +5,8 @@ Tests cover:
 - Query normalization for Drive API syntax
 """
 
+from unittest.mock import MagicMock, patch
+
 from g_workspace_mcp.src.tools.drive_tools import _normalize_drive_query
 
 
@@ -78,3 +80,72 @@ class TestNormalizeDriveQuery:
         query = "name CONTAINS 'test'"
         result = _normalize_drive_query(query)
         assert result == query
+
+
+class TestDriveListPagination:
+    """Tests for drive_list pagination support."""
+
+    @patch("g_workspace_mcp.src.tools.drive_tools.get_auth")
+    def test_single_page_returns_all_files(self, mock_get_auth):
+        """Should return files from a single page when no nextPageToken."""
+        from g_workspace_mcp.src.tools.drive_tools import drive_list
+
+        mock_service = MagicMock()
+        mock_get_auth.return_value.get_service.return_value = mock_service
+
+        mock_service.files.return_value.list.return_value.execute.return_value = {
+            "files": [{"id": "f1", "name": "file1"}, {"id": "f2", "name": "file2"}],
+        }
+
+        result = drive_list("root", max_results=25)
+
+        assert result["status"] == "success"
+        assert result["count"] == 2
+
+    @patch("g_workspace_mcp.src.tools.drive_tools.get_auth")
+    def test_multiple_pages_fetched(self, mock_get_auth):
+        """Should follow nextPageToken to get all pages up to max_results."""
+        from g_workspace_mcp.src.tools.drive_tools import drive_list
+
+        mock_service = MagicMock()
+        mock_get_auth.return_value.get_service.return_value = mock_service
+
+        # First page returns 2 files + nextPageToken
+        # Second page returns 1 file + no token
+        mock_service.files.return_value.list.return_value.execute.side_effect = [
+            {
+                "files": [{"id": "f1", "name": "file1"}, {"id": "f2", "name": "file2"}],
+                "nextPageToken": "token123",
+            },
+            {
+                "files": [{"id": "f3", "name": "file3"}],
+            },
+        ]
+
+        result = drive_list("root", max_results=200)
+
+        assert result["status"] == "success"
+        assert result["count"] == 3
+        # Should have made 2 API calls
+        assert mock_service.files.return_value.list.return_value.execute.call_count == 2
+
+    @patch("g_workspace_mcp.src.tools.drive_tools.get_auth")
+    def test_stops_at_max_results(self, mock_get_auth):
+        """Should stop fetching pages when max_results is reached."""
+        from g_workspace_mcp.src.tools.drive_tools import drive_list
+
+        mock_service = MagicMock()
+        mock_get_auth.return_value.get_service.return_value = mock_service
+
+        # First page returns 3 files, which meets max_results=3
+        mock_service.files.return_value.list.return_value.execute.return_value = {
+            "files": [{"id": f"f{i}", "name": f"file{i}"} for i in range(3)],
+            "nextPageToken": "more_data",
+        }
+
+        result = drive_list("root", max_results=3)
+
+        assert result["status"] == "success"
+        assert result["count"] == 3
+        # Should only make 1 API call since we already have enough
+        assert mock_service.files.return_value.list.return_value.execute.call_count == 1
