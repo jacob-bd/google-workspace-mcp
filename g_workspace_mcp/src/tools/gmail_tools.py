@@ -55,37 +55,58 @@ def gmail_search(
         )
 
         messages = results.get("messages", [])
+        messages = messages[:max_results]
 
-        # Get details for each message
-        detailed_messages = []
-        for msg in messages[:max_results]:
-            msg_detail = (
-                service.users()
-                .messages()
-                .get(
+        if not messages:
+            logger.info(f"Gmail search found 0 messages for query: {query}")
+            return {
+                "status": "success",
+                "query": query,
+                "count": 0,
+                "messages": [],
+            }
+
+        # Batch fetch message details (1 HTTP call instead of N)
+        detailed_messages = [None] * len(messages)
+
+        def _make_callback(index, msg_id, thread_id):
+            """Create a callback for batch request that captures index and IDs."""
+            def callback(request_id, response, exception):
+                if exception is not None:
+                    logger.warning(f"Failed to fetch message {msg_id}: {exception}")
+                    return
+
+                headers = {
+                    h["name"]: h["value"]
+                    for h in response.get("payload", {}).get("headers", [])
+                }
+
+                detailed_messages[index] = {
+                    "id": msg_id,
+                    "threadId": thread_id,
+                    "subject": headers.get("Subject", "(No Subject)"),
+                    "from": headers.get("From", "Unknown"),
+                    "date": headers.get("Date", ""),
+                    "snippet": response.get("snippet", ""),
+                    "webLink": f"https://mail.google.com/mail/u/0/#inbox/{msg_id}",
+                }
+            return callback
+
+        batch = service.new_batch_http_request()
+        for i, msg in enumerate(messages):
+            batch.add(
+                service.users().messages().get(
                     userId="me",
                     id=msg["id"],
                     format="metadata",
                     metadataHeaders=["Subject", "From", "Date"],
-                )
-                .execute()
+                ),
+                callback=_make_callback(i, msg["id"], msg["threadId"]),
             )
+        batch.execute()
 
-            headers = {
-                h["name"]: h["value"] for h in msg_detail.get("payload", {}).get("headers", [])
-            }
-
-            detailed_messages.append(
-                {
-                    "id": msg["id"],
-                    "threadId": msg["threadId"],
-                    "subject": headers.get("Subject", "(No Subject)"),
-                    "from": headers.get("From", "Unknown"),
-                    "date": headers.get("Date", ""),
-                    "snippet": msg_detail.get("snippet", ""),
-                    "webLink": f"https://mail.google.com/mail/u/0/#inbox/{msg['id']}",
-                }
-            )
+        # Filter out any None entries from failed individual fetches
+        detailed_messages = [m for m in detailed_messages if m is not None]
 
         logger.info(f"Gmail search found {len(detailed_messages)} messages for query: {query}")
 
