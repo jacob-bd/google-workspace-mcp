@@ -87,7 +87,7 @@ def get_python_logger(log_level: str = "INFO") -> structlog.BoundLogger:
     if not _LOGGING_CONFIGURED:
         logging.basicConfig(
             format="%(message)s",
-            stream=sys.stdout,
+            stream=sys.stderr,
             level=log_level,
         )
 
