@@ -142,14 +142,18 @@ Watch this demo showing the GCP OAuth setup process and the tool in action:
 
 1. A popup will show your Client ID and Client Secret
 2. Click **Download JSON** (important: do this now, you can't download the secret later!)
-3. Rename the downloaded file to `client_secret.json`
-4. Move it to: `~/.config/g-workspace-mcp/client_secret.json`
+3. Move it to `~/.config/g-workspace-mcp/client_secret.json` using the command below (this also renames the file for you)
 
 **On macOS/Linux:**
 ```bash
 mkdir -p ~/.config/g-workspace-mcp
-mv ~/Downloads/client_secret_*.json ~/.config/g-workspace-mcp/client_secret.json
+mv ~/Downloads/client_secret*.json ~/.config/g-workspace-mcp/client_secret.json
 ```
+
+> **Tip:** The downloaded file has a long name like `client_secret_123...googleusercontent.com.json`. The command above matches it automatically and renames it. If the `mv` command says "No match", open your Downloads folder and drag the file manually, or copy the exact filename:
+> ```bash
+> mv ~/Downloads/<paste-exact-filename>.json ~/.config/g-workspace-mcp/client_secret.json
+> ```
 
 ### Step 6: Run Setup
 
