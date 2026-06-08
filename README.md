@@ -1,5 +1,7 @@
 # Google Workspace MCP Server
 
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-FFDD00?style=flat-square&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/jacobbd)
+
 A Model Context Protocol (MCP) server providing read-only access to Google Workspace services.
 
 ## How is this different?
